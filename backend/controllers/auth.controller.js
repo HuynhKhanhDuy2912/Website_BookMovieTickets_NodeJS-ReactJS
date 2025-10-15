@@ -15,7 +15,6 @@ exports.register = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
     const user = await User.create({ name, email, password: hashed, role: "user" });
 
-    // Không gửi password về client
     const safeUser = { id: user._id, name: user.name, email: user.email, role: user.role };
     res.status(201).json({ message: "Đăng ký thành công", user: safeUser });
   } catch (err) {

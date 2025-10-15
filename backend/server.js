@@ -11,15 +11,15 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", require("./routes/auth.route"));
+app.use("/api/cinema", require("./routes/cinema.route"));
+app.use("/api/movie", require("./routes/movie.route"));
+app.use("/api/article", require("./routes/article.route"));
+app.use("/api/combo", require("./routes/combo.route"));
+app.use("/api/order", require("./routes/order.route"));
+app.use("/api/room", require("./routes/room.route"));
+app.use("/api/showtime", require("./routes/showtime.route"));
+app.use("/api/ticket", require("./routes/ticket.route"));
 
-// Route bảo vệ (test)
-const { verifyToken, isAdmin } = require("./middleware/authMiddleware");
-app.get("/api/protected/user", verifyToken, (req, res) => {
-  res.json({ message: "Bạn đã xác thực", user: req.user });
-});
-app.get("/api/protected/admin", verifyToken, isAdmin, (req, res) => {
-  res.json({ message: "Bạn là admin" });
-});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
