@@ -1,4 +1,25 @@
 const Room = require("../models/Room");
+const Cinema = require("../models/Cinema");
+
+// Hàm sinh ghế tự động
+function buildSeats(rows, cols, vipRows = []) {
+  const seats = [];
+
+  // Nếu vipRows là chữ, convert sang số (A->0, B->1,...)
+  const vipIndexes = vipRows.map(r =>
+    typeof r === "string" ? r.toUpperCase().charCodeAt(0) - 65 : r
+  );
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const seatNumber = String.fromCharCode(65 + r) + (c + 1);
+      const type = vipIndexes.includes(r) ? "vip" : "standard";
+      seats.push({ seatNumber, type, status: "available" });
+    }
+  }
+
+  return seats;
+}
 
 // Lấy tất cả phòng chiếu
 exports.getAllRooms = async (req, res) => {
@@ -24,7 +45,24 @@ exports.getRoomById = async (req, res) => {
 // Tạo mới phòng chiếu
 exports.createRoom = async (req, res) => {
   try {
-    const room = await Room.create(req.body);
+    const { cinema, name, rows = 5, cols = 8, vipRows = [] } = req.body;
+
+    const seats = buildSeats(rows, cols, vipRows);
+
+    const roomData = {
+      cinema,
+      name,
+      rows,
+      cols,
+      seats,
+      seatCount: seats.length,
+    };
+
+    const room = await Room.create(roomData);
+
+    // Cập nhật danh sách phòng trong Cinema
+    await Cinema.findByIdAndUpdate(cinema, { $push: { rooms: room._id } });
+
     res.status(201).json({ message: "Thêm phòng chiếu thành công", room });
   } catch (err) {
     res.status(400).json({ message: "Lỗi khi thêm phòng chiếu", error: err.message });
@@ -50,6 +88,9 @@ exports.deleteRoom = async (req, res) => {
   try {
     const room = await Room.findByIdAndDelete(req.params.id);
     if (!room) return res.status(404).json({ message: "Không tìm thấy phòng chiếu" });
+
+    await Cinema.findByIdAndUpdate(room.cinema, { $pull: { rooms: room._id } });
+
     res.json({ message: "Xóa phòng chiếu thành công" });
   } catch (err) {
     res.status(500).json({ message: "Lỗi khi xóa phòng chiếu", error: err.message });

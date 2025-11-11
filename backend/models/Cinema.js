@@ -7,6 +7,7 @@ const cinemaSchema = new mongoose.Schema(
     city: String,
     phone: String,
     image: String,
+    rooms: [{ type: mongoose.Schema.Types.ObjectId, ref: "Room" }],
   },
   { timestamps: true }
 );
