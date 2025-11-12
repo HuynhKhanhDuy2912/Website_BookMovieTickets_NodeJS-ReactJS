@@ -14,7 +14,7 @@ export default function Login() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       alert("✅ " + data.message);
-      navigate("/cinema");
+      navigate("/movie");
     } catch (err) {
       alert("❌ " + (err.response?.data?.message || "Đăng nhập thất bại"));
     }

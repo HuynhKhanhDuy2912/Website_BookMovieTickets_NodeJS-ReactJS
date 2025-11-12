@@ -19,14 +19,25 @@ exports.getCinemaById = async (req, res) => {
   }
 };
 
+// exports.createCinema = async (req, res) => {
+//   try {
+//     const cinema = await Cinema.create(req.body);
+//     res.status(201).json({ message: "Thêm rạp thành công", cinema });
+//   } catch (err) {
+//     res.status(400).json({ message: "Lỗi khi thêm rạp", error: err.message });
+//   }
+// };
 exports.createCinema = async (req, res) => {
+  console.log("BODY received:", req.body);
   try {
     const cinema = await Cinema.create(req.body);
     res.status(201).json({ message: "Thêm rạp thành công", cinema });
   } catch (err) {
+    console.error(err);
     res.status(400).json({ message: "Lỗi khi thêm rạp", error: err.message });
   }
 };
+
 
 exports.updateCinema = async (req, res) => {
   try {

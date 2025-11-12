@@ -7,7 +7,7 @@ const cinemaSchema = new mongoose.Schema(
     city: String,
     phone: String,
     image: String,
-    rooms: [{ type: mongoose.Schema.Types.ObjectId, ref: "Room" }],
+    rooms: [{ type: mongoose.Schema.Types.ObjectId, ref: "Room" }], // thêm dòng này
   },
   { timestamps: true }
 );

@@ -4,7 +4,10 @@ import { getAllCinemas, createCinema, deleteCinema } from "../api/cinemaService"
 export default function Cinemas() {
   const [cinemas, setCinemas] = useState([]);
   const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [phone, setPhone] = useState("");
+  const [image, setImage] = useState("");
 
   // Lấy danh sách rạp
   const fetchCinemas = async () => {
@@ -25,20 +28,28 @@ export default function Cinemas() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation dữ liệu
-    if (!name.trim() || !location.trim()) {
+    if (!name.trim() || !address.trim()) {
       alert("❌ Tên và địa chỉ rạp không được để trống!");
       return;
     }
 
-    const payload = { name: name.trim(), location: location.trim() };
+    const payload = {
+      name: name.trim(),
+      address: address.trim(),
+      city: city.trim() || undefined,
+      phone: phone.trim() || undefined,
+      image: image.trim() || undefined,
+    };
     console.log("Gửi lên backend:", payload);
 
     try {
       await createCinema(payload);
       alert("✅ Thêm rạp thành công!");
       setName("");
-      setLocation("");
+      setAddress("");
+      setCity("");
+      setPhone("");
+      setImage("");
       fetchCinemas();
     } catch (err) {
       console.error("Lỗi khi tạo rạp:", err.response || err);
@@ -78,8 +89,29 @@ export default function Cinemas() {
           type="text"
           placeholder="Địa chỉ rạp"
           className="border p-2 w-full"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Thành phố"
+          className="border p-2 w-full"
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Số điện thoại"
+          className="border p-2 w-full"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Link ảnh"
+          className="border p-2 w-full"
+          value={image}
+          onChange={(e) => setImage(e.target.value)}
         />
         <button
           type="submit"
@@ -97,7 +129,16 @@ export default function Cinemas() {
           >
             <div>
               <p className="font-semibold">{cinema.name}</p>
-              <p className="text-gray-500">{cinema.location}</p>
+              <p className="text-gray-500">{cinema.address}</p>
+              {cinema.city && <p className="text-gray-400">{cinema.city}</p>}
+              {cinema.phone && <p className="text-gray-400">{cinema.phone}</p>}
+              {cinema.image && (
+                <img
+                  src={cinema.image}
+                  alt={cinema.name}
+                  className="mt-2 w-32 h-20 object-cover rounded"
+                />
+              )}
             </div>
             <button
               onClick={() => handleDelete(cinema._id)}
