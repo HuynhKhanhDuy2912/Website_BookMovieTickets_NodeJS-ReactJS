@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAllCinemas, createCinema, deleteCinema } from "../api/cinemaService";
+import { getAllCinemas, createCinema, deleteCinema } from "../../api/cinemaService";
 
 export default function Cinemas() {
   const [cinemas, setCinemas] = useState([]);

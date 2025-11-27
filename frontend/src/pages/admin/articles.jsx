@@ -4,7 +4,7 @@ import {
   createArticle,
   updateArticle,
   deleteArticle,
-} from "../api/articleService";
+} from "../../api/articleService";
 
 export default function ArticlesPage() {
   const [articles, setArticles] = useState([]);

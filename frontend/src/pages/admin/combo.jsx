@@ -4,7 +4,7 @@ import {
   createCombo,
   updateCombo,
   deleteCombo,
-} from "../api/comboService";
+} from "../../api/comboService";
 
 export default function Combo() {
   const [combos, setCombos] = useState([]);

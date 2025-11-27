@@ -4,7 +4,7 @@ import {
   createMovie,
   updateMovie,
   deleteMovie,
-} from "../api/movieService";
+} from "../../api/movieService";
 
 export default function Movies() {
   const [movies, setMovies] = useState([]);
