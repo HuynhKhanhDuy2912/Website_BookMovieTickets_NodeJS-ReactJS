@@ -131,17 +131,16 @@ export default function Orders({ role }) {
           onChange={(e) => setPaymentMethod(e.target.value)}
           className="border p-2 w-full"
         >
-          <option value="cash">Cash</option>
-          <option value="momo">MoMo</option>
-          <option value="ZaloPay">ZaloPay</option>
+          <option value="cash">Tiền mặt</option>
+          <option value="momo">VNPay</option>
         </select>
         <select
           value={paymentStatus}
           onChange={(e) => setPaymentStatus(e.target.value)}
           className="border p-2 w-full"
         >
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
+          <option value="unpaid">Chưa thanh toán</option>
+          <option value="paid">Đã thanh toán</option>
         </select>
 
         <button type="submit" className="bg-blue-500 text-white p-2 rounded w-full">
