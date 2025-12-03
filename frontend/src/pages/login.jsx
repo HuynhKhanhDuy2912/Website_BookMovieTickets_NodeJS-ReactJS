@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { loginUser } from "../api/authService";
 // Lưu ý: Không cần import file CSS nào nữa vì đã dùng Tailwind trực tiếp
 
 const Login = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    email: '',
-    password: ''
+    email: "",
+    password: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -16,41 +17,30 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+      const res = await loginUser(formData.email, formData.password);
+      const data = res.data; 
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Đăng nhập thất bại');
-      }
-
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
       alert("Đăng nhập thành công!");
-      
-      if (data.user.role === 1) {
-         navigate('/admin/articles'); 
-      } else {
-         navigate('/'); 
-      }
 
+      if (data.user.role === "admin" || data.user.role === 1) {
+        navigate("/movie");
+      } else {
+        navigate("/");
+      }
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || "Đăng nhập thất bại");
     }
   };
 
   return (
     // Container chính: Full màn hình, nền xám nhẹ, căn giữa nội dung
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      
       {/* Tiêu đề phía trên Form */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -64,7 +54,6 @@ const Login = () => {
       {/* Khối Form chính */}
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          
           {/* Hiển thị lỗi nếu có */}
           {error && (
             <div className="mb-4 bg-red-50 border-l-4 border-red-500 p-4">
@@ -79,7 +68,10 @@ const Login = () => {
           <form className="space-y-6" onSubmit={handleSubmit}>
             {/* Input Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700"
+              >
                 Địa chỉ Email
               </label>
               <div className="mt-1">
@@ -99,7 +91,10 @@ const Login = () => {
 
             {/* Input Password */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700"
+              >
                 Mật khẩu
               </label>
               <div className="mt-1">

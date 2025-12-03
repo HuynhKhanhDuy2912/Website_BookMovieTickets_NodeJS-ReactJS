@@ -6,7 +6,18 @@ export default function Navbar() {
 
   // 1. Lấy thông tin User từ LocalStorage
   const userString = localStorage.getItem("user");
-  const user = userString ? JSON.parse(userString) : null;
+  let user = null;
+
+  if (userString && userString !== "undefined") {
+    try {
+      user = JSON.parse(userString);
+    } catch (error) {
+      // Nếu dữ liệu lỗi, xóa đi để tránh lỗi lần sau
+      console.error("Dữ liệu user trong localStorage bị lỗi:", error);
+      localStorage.removeItem("user");
+    }
+  }
+
   const role = user?.role;
 
   // 2. Kiểm tra xem có phải Admin không (chấp nhận cả số 1 và chữ "admin")
@@ -20,6 +31,7 @@ export default function Navbar() {
     
     // Điều hướng về trang đăng nhập
     navigate("/login");
+    alert("Đăng xuất thành công!");
     
     // (Tùy chọn) Reload lại trang để Navbar cập nhật lại trạng thái ngay lập tức
     window.location.reload(); 
