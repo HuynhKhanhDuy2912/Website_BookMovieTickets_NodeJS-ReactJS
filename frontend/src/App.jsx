@@ -9,6 +9,8 @@ import Combo from "./pages/admin/combo";
 import Movie from "./pages/admin/movie";
 import Order from "./pages/admin/order";
 import Room from "./pages/admin/room";
+import Showtime from "./pages/admin/showtime";
+import Ticket from "./pages/admin/Tickets";
 
 // --- COMPONENT BẢO VỆ (ADMIN GUARD) ---
 const AdminGuard = ({ children }) => {
@@ -68,6 +70,8 @@ function App() {
         <Route path="/cinema" element={<AdminGuard><Cinema /></AdminGuard>} />
         <Route path="/articles" element={<AdminGuard><Articles /></AdminGuard>} />
         <Route path="/room" element={<AdminGuard><Room /></AdminGuard>} />
+        <Route path="/showtime" element={<AdminGuard><Showtime /></AdminGuard>} />
+        <Route path="/ticket" element={<AdminGuard><Ticket /></AdminGuard>} />
       </Routes>
     </BrowserRouter>
   );
