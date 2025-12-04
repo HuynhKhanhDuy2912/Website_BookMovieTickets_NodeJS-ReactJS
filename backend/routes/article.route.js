@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const articleController = require("../controllers/article.controller");
 const { verifyToken, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 
 router.get("/", articleController.getAllArticles);
 router.get("/:id", articleController.getArticleById);

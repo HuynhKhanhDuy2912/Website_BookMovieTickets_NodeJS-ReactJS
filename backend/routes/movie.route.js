@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const movieController = require("../controllers/movie.controller");
 const { verifyToken, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 
 // Xem phim (ai cũng được)
 router.get("/", movieController.getAllMovies);

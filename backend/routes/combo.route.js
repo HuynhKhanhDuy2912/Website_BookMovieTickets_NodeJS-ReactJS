@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const comboController = require("../controllers/combo.controller");
 const { verifyToken, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 
 router.get("/", comboController.getAllCombos);
 router.get("/:id", comboController.getComboById);

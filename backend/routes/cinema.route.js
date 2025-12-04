@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const cinemaController = require("../controllers/cinema.controller");
 const { verifyToken, authorizeRoles } = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 
 // Ai cũng xem được danh sách rạp
 router.get("/", cinemaController.getAllCinemas);
