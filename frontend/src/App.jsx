@@ -10,7 +10,7 @@ import Movie from "./pages/admin/movie";
 import Order from "./pages/admin/order";
 import Room from "./pages/admin/room";
 import Showtime from "./pages/admin/showtime";
-import Ticket from "./pages/admin/Tickets";
+import Ticket from "./pages/admin/tickets";
 
 // --- COMPONENT BẢO VỆ (ADMIN GUARD) ---
 const AdminGuard = ({ children }) => {
