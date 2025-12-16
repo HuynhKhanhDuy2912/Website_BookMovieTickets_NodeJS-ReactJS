@@ -2,7 +2,7 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// Register (for public users only) => always role = "user"
+// Register
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -13,7 +13,17 @@ exports.register = async (req, res) => {
     if (existing) return res.status(400).json({ message: "Email đã tồn tại" });
 
     const hashed = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hashed, role: "user" });
+    
+    // Logic ảnh mặc định
+    const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`;
+
+    const user = await User.create({ 
+        name, 
+        email, 
+        password: hashed, 
+        role: "user", 
+        avatar: req.body.avatar || defaultAvatar 
+    });
 
     const safeUser = { id: user._id, name: user.name, email: user.email, role: user.role };
     res.status(201).json({ message: "Đăng ký thành công", user: safeUser });
@@ -22,7 +32,7 @@ exports.register = async (req, res) => {
   }
 };
 
-// Login (any role: user/staff/admin)
+// Login
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;

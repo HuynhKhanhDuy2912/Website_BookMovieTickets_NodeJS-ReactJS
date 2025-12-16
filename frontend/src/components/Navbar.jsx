@@ -57,6 +57,8 @@ export default function Navbar() {
             <Link to="/room" className="hover:underline hover:text-gray-300 transition">Phòng chiếu</Link>
             <Link to="/showtime" className="hover:underline hover:text-gray-300 transition">Suất chiếu</Link>
             <Link to="/ticket" className="hover:underline hover:text-gray-300 transition">Vé đặt</Link>
+            <Link to="/user" className="hover:underline hover:text-gray-300 transition">Tài khoản</Link>
+
           </>
         )}
       </div>

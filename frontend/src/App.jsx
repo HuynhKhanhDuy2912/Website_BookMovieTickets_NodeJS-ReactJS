@@ -11,6 +11,7 @@ import Order from "./pages/admin/order";
 import Room from "./pages/admin/room";
 import Showtime from "./pages/admin/showtime";
 import Ticket from "./pages/admin/Tickets";
+import User from "./pages/admin/user";
 
 // --- COMPONENT BẢO VỆ (ADMIN GUARD) ---
 const AdminGuard = ({ children }) => {
@@ -72,6 +73,7 @@ function App() {
         <Route path="/room" element={<AdminGuard><Room /></AdminGuard>} />
         <Route path="/showtime" element={<AdminGuard><Showtime /></AdminGuard>} />
         <Route path="/ticket" element={<AdminGuard><Ticket /></AdminGuard>} />
+        <Route path="/user" element={<AdminGuard><User /></AdminGuard>} />
       </Routes>
     </BrowserRouter>
   );
