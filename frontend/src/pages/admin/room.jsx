@@ -26,12 +26,11 @@ export default function Rooms() {
   const [formData, setFormData] = useState({
     cinemaId: "",
     name: "",
-    rows: 5,
-    cols: 8,
+    rows: "",
+    cols: "",
     vipRows: "", // Nhập chuỗi "A, B"
   });
 
-  // Fetch dữ liệu ban đầu
   useEffect(() => {
     fetchRooms();
     fetchCinemasList();
@@ -66,8 +65,8 @@ export default function Rooms() {
     setFormData({
       cinemaId: "",
       name: "",
-      rows: 5,
-      cols: 8,
+      rows: "",
+      cols: "",
       vipRows: "",
     });
   };
@@ -75,8 +74,8 @@ export default function Rooms() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.cinemaId || !formData.name.trim()) {
-      alert("❌ Vui lòng chọn rạp và nhập tên phòng!");
+    if (!formData.cinemaId || !formData.name.trim() || !formData.cols || !formData.rows) {
+      alert("Vui lòng điền đầy đủ thông tin!");
       return;
     }
 
@@ -119,11 +118,10 @@ export default function Rooms() {
     setFormData({
       cinemaId: room.cinema?._id || room.cinema || "",
       name: room.name,
-      rows: room.rows || 5,
-      cols: room.cols || 8,
-      vipRows: "", // Để trống vì backend thường không trả về cấu hình này dạng chuỗi
+      rows: room.rows || "",
+      cols: room.cols || "",
+      vipRows: "",
     });
-    // Scroll lên đầu trang
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -131,6 +129,7 @@ export default function Rooms() {
     if (!window.confirm("Bạn có chắc muốn xóa phòng chiếu này?")) return;
     try {
       await deleteRoom(id);
+      alert("✅ Xóa phòng chiếu thành công!");
       fetchRooms();
     } catch (err) {
       alert("❌ Không thể xóa phòng!");

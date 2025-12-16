@@ -181,8 +181,7 @@ export default function Orders({ role }) {
                 className="border p-2 w-full rounded focus:ring-2 focus:ring-indigo-400 outline-none"
               >
                 <option value="cash">Tiền mặt (Cash)</option>
-                <option value="momo">Ví điện tử (Momo/VNPay)</option>
-                <option value="card">Thẻ (Card)</option>
+                <option value="momo">Ví điện tử (VNPay)</option>
               </select>
             </div>
             <div>

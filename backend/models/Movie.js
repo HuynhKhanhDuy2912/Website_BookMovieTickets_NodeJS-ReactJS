@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const movieSchema = new mongoose.Schema(
   {
+    cinema: [{ type: mongoose.Schema.Types.ObjectId, ref: "Cinema", required: true }],
     title: { type: String, required: true },
     description: String,
     director: String,
