@@ -1,8 +1,18 @@
-import React, { useEffect, useRef } from "react"; 
-import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom"; 
-import Navbar from "./components/Navbar";
+import React from "react"; 
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"; 
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// Layouts & Guards
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import AdminLayout from "./pages/admin/adminLayout";
+import ClientLayout from "./pages/client/ClientLayout"; // Bạn cần tạo file này như hướng dẫn trên
+
+// Auth Pages
 import Login from "./pages/login";
 import Register from "./pages/register";
+
+// Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
 import Combo from "./pages/admin/combo";
@@ -13,67 +23,78 @@ import Showtime from "./pages/admin/showtime";
 import Ticket from "./pages/admin/Tickets";
 import User from "./pages/admin/user";
 
-// --- COMPONENT BẢO VỆ (ADMIN GUARD) ---
-const AdminGuard = ({ children }) => {
-  const navigate = useNavigate();
-  
-  // Lấy user từ localStorage
-  const userString = localStorage.getItem("user");
-  const user = userString ? JSON.parse(userString) : null;
-  const role = user?.role;
-  
-  // Tạo cái chốt chặn (cờ hiệu)
-  const alertShown = useRef(false);
-
-  // Sử dụng useEffect để xử lý logic "đá" người dùng
-  useEffect(() => {
-    // Kiểm tra xem có phải admin không
-    const isNotAdmin = role !== "admin" && role !== 1 && role !== "1";
-
-    // Logic chặn: Nếu không phải Admin VÀ chưa hiện thông báo bao giờ
-    if (isNotAdmin && !alertShown.current) {
-      
-      alertShown.current = true; // Đóng chốt ngay: "Đã báo rồi nhé!"
-      
-      alert("Bạn không có quyền truy cập vào trang này!"); 
-      navigate("/login", { replace: true });
-    }
-    
-    // Reset lại chốt khi role thay đổi (đề phòng trường hợp login user khác ngay lập tức)
-    if (!isNotAdmin) {
-        alertShown.current = false;
-    }
-
-  }, [role, navigate]);
-
-  // Nếu ĐÚNG là admin thì hiện nội dung
-  if (role === "admin" || role === 1 || role === "1") {
-    return children;
-  }
-
-  return null; 
-};
+// Client Pages (Ví dụ - bạn sẽ tạo sau)
+// import HomePage from "./pages/client/HomePage";
+// import MovieDetail from "./pages/client/MovieDetail";
 
 function App() {
   return (
     <BrowserRouter>
-      <Navbar />
+      {/* Thông báo toàn cục */}
+      <ToastContainer position="top-right" autoClose={3000} />
+
       <Routes>
-        {/* --- PUBLIC ROUTES --- */}
-        <Route path="/" element={<Login />} />
+        {/* =========================================
+            1. PUBLIC ROUTES (Ai cũng vào được)
+           ========================================= */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        
+        {/* Mặc định vào trang chủ client */}
+        {/* <Route path="/" element={<Navigate to="/home" replace />} /> */}
 
-        {/* --- ADMIN ROUTES --- */}
-        <Route path="/order" element={<AdminGuard><Order /></AdminGuard>} />
-        <Route path="/movie" element={<AdminGuard><Movie /></AdminGuard>} />
-        <Route path="/combo" element={<AdminGuard><Combo /></AdminGuard>} />
-        <Route path="/cinema" element={<AdminGuard><Cinema /></AdminGuard>} />
-        <Route path="/articles" element={<AdminGuard><Articles /></AdminGuard>} />
-        <Route path="/room" element={<AdminGuard><Room /></AdminGuard>} />
-        <Route path="/showtime" element={<AdminGuard><Showtime /></AdminGuard>} />
-        <Route path="/ticket" element={<AdminGuard><Ticket /></AdminGuard>} />
-        <Route path="/user" element={<AdminGuard><User /></AdminGuard>} />
+
+        {/* =========================================
+            2. CLIENT AREA (Giao diện người dùng)
+           ========================================= */}
+        {/* Nếu web phim cho khách xem không cần đăng nhập thì để Public. 
+            Nếu cần đăng nhập mới được đặt vé thì bọc ProtectedRoute quanh trang đặt vé */}
+        
+        <Route element={<ClientLayout />}>
+             {/* Trang chủ khách hàng */}
+             <Route path="/" element={<div className="p-10">Trang Chủ (Danh sách phim)</div>} />
+             
+             {/* Chi tiết phim */}
+             <Route path="/movie/:id" element={<div className="p-10">Chi tiết phim</div>} />
+             
+             {/* Đặt vé (Cần đăng nhập) */}
+             <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
+                <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} />
+                <Route path="/profile" element={<div className="p-10">Lịch sử vé</div>} />
+             </Route>
+        </Route>
+
+
+        {/* =========================================
+            3. ADMIN AREA (Chỉ Admin mới vào được)
+           ========================================= */}
+        <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+          
+          {/* AdminLayout sẽ chứa Navbar Admin */}
+          <Route path="/admin" element={<AdminLayout />}>
+            
+            {/* Redirect mặc định khi vào /admin -> /admin/dashboard hoặc /admin/movie */}
+            <Route index element={<Navigate to="/admin/movie" replace />} />
+
+            {/* Các route con: URL sẽ là /admin/movie, /admin/user... */}
+            <Route path="movie" element={<Movie />} />
+            <Route path="user" element={<User />} />
+            <Route path="order" element={<Order />} />
+            <Route path="combo" element={<Combo />} />
+            <Route path="cinema" element={<Cinema />} />
+            <Route path="articles" element={<Articles />} />
+            <Route path="room" element={<Room />} />
+            <Route path="showtime" element={<Showtime />} />
+            <Route path="ticket" element={<Ticket />} />
+          
+          </Route>
+        </Route>
+
+        {/* =========================================
+            4. NOT FOUND
+           ========================================= */}
+        <Route path="*" element={<div className="text-center mt-20 text-xl text-gray-500">404 - Trang không tồn tại</div>} />
+
       </Routes>
     </BrowserRouter>
   );
