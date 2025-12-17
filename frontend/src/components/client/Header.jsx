@@ -45,7 +45,8 @@ export default function Header() {
           <Link to="/" className="hover:text-yellow-400 transition">Trang Chủ</Link>
           <Link to="/movies" className="hover:text-yellow-400 transition">Phim Đang Chiếu</Link>
           <Link to="/cinemas" className="hover:text-yellow-400 transition">Rạp Chiếu</Link>
-          <Link to="/news" className="hover:text-yellow-400 transition">Tin Tức</Link>
+          <Link to="/articles" className="hover:text-yellow-400 transition">Tin Tức</Link>
+          
         </nav>
 
         {/* --- SEARCH BAR --- */}

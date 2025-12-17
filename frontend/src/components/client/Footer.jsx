@@ -67,7 +67,7 @@ export default function Footer() {
 
         <div className="border-t border-gray-800 mt-8 pt-6 text-center text-xs">
           <p>© 2024 Popcorn Cinema. All rights reserved.</p>
-          <p className="mt-1">Designed by Khanh Duy</p>
+          <p className="mt-1">Designed by DC</p>
         </div>
       </div>
     </footer>

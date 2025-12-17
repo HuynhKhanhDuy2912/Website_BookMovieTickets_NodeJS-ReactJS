@@ -1,17 +1,21 @@
-import React from "react"; 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"; 
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 // Layouts & Guards
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import AdminLayout from "./pages/admin/adminLayout";
+import AdminLayout from "./pages/admin/AdminLayout";
 import ClientLayout from "./pages/client/ClientLayout"; // Bạn cần tạo file này như hướng dẫn trên
 
 // Auth Pages
 import Login from "./pages/login";
 import Register from "./pages/register";
-
+import HomePage from "./pages/client/Home";
+import MoviePage from "./pages/client/MoviePage";
+import CinemaPage from "./pages/client/CinemaPage";
+import ArticlePage from "./pages/client/ArticlePage";
+import ArticleDetailPage from "./pages/client/ArticleDetailPage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -39,7 +43,7 @@ function App() {
            ========================================= */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        
+
         {/* Mặc định vào trang chủ client */}
         {/* <Route path="/" element={<Navigate to="/home" replace />} /> */}
 
@@ -49,19 +53,21 @@ function App() {
            ========================================= */}
         {/* Nếu web phim cho khách xem không cần đăng nhập thì để Public. 
             Nếu cần đăng nhập mới được đặt vé thì bọc ProtectedRoute quanh trang đặt vé */}
-        
+
         <Route element={<ClientLayout />}>
-             {/* Trang chủ khách hàng */}
-             <Route path="/" element={<div className="p-10">Trang Chủ (Danh sách phim)</div>} />
-             
-             {/* Chi tiết phim */}
-             <Route path="/movie/:id" element={<div className="p-10">Chi tiết phim</div>} />
-             
-             {/* Đặt vé (Cần đăng nhập) */}
-             <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
-                <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} />
-                <Route path="/profile" element={<div className="p-10">Lịch sử vé</div>} />
-             </Route>
+          {/* Trang chủ khách hàng */}
+          <Route path="/" element={<HomePage />} />
+
+          {/* Chi tiết phim */}
+          <Route path="/movies" element={<MoviePage />} />
+          <Route path="/cinemas" element={<CinemaPage />} />
+          <Route path="/articles" element={<ArticlePage />} />
+          <Route path="/articles/:id" element={<ArticleDetailPage />} />
+          {/* Đặt vé (Cần đăng nhập) */}
+          <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
+            <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} />
+            <Route path="/profile" element={<div className="p-10">Lịch sử vé</div>} />
+          </Route>
         </Route>
 
 
@@ -69,10 +75,10 @@ function App() {
             3. ADMIN AREA (Chỉ Admin mới vào được)
            ========================================= */}
         <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
-          
+
           {/* AdminLayout sẽ chứa Navbar Admin */}
           <Route path="/admin" element={<AdminLayout />}>
-            
+
             {/* Redirect mặc định khi vào /admin -> /admin/dashboard hoặc /admin/movie */}
             <Route index element={<Navigate to="/admin/movie" replace />} />
 
@@ -86,7 +92,7 @@ function App() {
             <Route path="room" element={<Room />} />
             <Route path="showtime" element={<Showtime />} />
             <Route path="ticket" element={<Ticket />} />
-          
+
           </Route>
         </Route>
 
