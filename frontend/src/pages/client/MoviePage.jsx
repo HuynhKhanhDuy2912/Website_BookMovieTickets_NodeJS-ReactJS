@@ -82,7 +82,7 @@ export default function MoviePage() {
         
         {/* === TIÊU ĐỀ === */}
         <div className="text-center mb-10">
-           <h1 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-500 uppercase tracking-wide">
+           <h1 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-500 uppercase tracking-wide pt-10">
               Kho Phim Khổng Lồ
            </h1>
            <p className="text-gray-400 mt-2">Cập nhật liên tục các bộ phim hot nhất thị trường</p>

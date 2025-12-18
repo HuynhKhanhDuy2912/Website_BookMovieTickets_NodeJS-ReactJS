@@ -80,7 +80,7 @@ export default function ArticleDetailPage() {
         {/* === FEATURED IMAGE === */}
         <div className="w-full h-[300px] md:h-[500px] rounded-2xl overflow-hidden mb-10 shadow-2xl">
            <img 
-             src={article.thumbnail} 
+             src={article.image} 
              alt={article.title} 
              className="w-full h-full object-cover"
            />

@@ -218,7 +218,7 @@ export default function Home() {
               <div key={article._id} className="bg-gray-900 rounded-lg overflow-hidden hover:shadow-xl transition cursor-pointer group">
                  <div className="h-48 overflow-hidden">
                     <img 
-                      src={article.thumbnail || "https://via.placeholder.com/300x200"} 
+                      src={article.image || "https://via.placeholder.com/300x200"} 
                       alt={article.title} 
                       className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
                     />

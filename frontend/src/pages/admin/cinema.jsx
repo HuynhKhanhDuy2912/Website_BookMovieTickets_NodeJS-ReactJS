@@ -258,7 +258,7 @@ export default function Cinemas() {
                 onClick={() => handleEdit(cinema)}
                 className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded flex items-center gap-2 text-sm"
               >
-                <SquarePen size={16} /> Cập nhật
+                <SquarePen size={16} /> Sửa
               </button>
 
               <button
