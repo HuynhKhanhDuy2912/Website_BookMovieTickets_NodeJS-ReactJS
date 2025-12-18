@@ -8,4 +8,5 @@ router.get("/my-tickets", verifyToken, authorizeRoles("user", "staff", "admin"),
 router.get("/", verifyToken, authorizeRoles("staff", "admin"), ticketController.getAllTickets);
 router.delete("/:id", verifyToken, authorizeRoles("admin"), ticketController.deleteTicket);
 router.put("/:id", verifyToken, authorizeRoles("staff", "admin"), ticketController.updateTicket);
+router.get("/showtime/:showtimeId", ticketController.getTicketsByShowtime);
 module.exports = router;

@@ -129,3 +129,14 @@ exports.deleteTicket = async (req, res) => {
     res.status(500).json({ message: "Error deleting ticket", error: error.message });
   }
 };
+
+// Lấy danh sách vé đã đặt của 1 suất chiếu (để tô màu ghế đã bán)
+exports.getTicketsByShowtime = async (req, res) => {
+  try {
+    const { showtimeId } = req.params;
+    const tickets = await Ticket.find({ showtime: showtimeId });
+    res.json(tickets);
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi lấy danh sách vé", error: err.message });
+  }
+};

@@ -1,15 +1,59 @@
 const Order = require("../models/Order");
-
+const Ticket = require("../models/Ticket");
 // Tạo đơn hàng mới (User đặt vé, combo, v.v.)
 exports.createOrder = async (req, res) => {
   try {
-    const order = await Order.create({
-      user: req.user._id,
-      ...req.body,
+    const { showtimeId, userId, seats, total, combos, paymentMethod } = req.body;
+
+    // --- BƯỚC 1: LẤY THÔNG TIN SHOWTIME ĐỂ BIẾT MOVIE ID ---
+    const showtimeData = await Showtime.findById(showtimeId);
+    if (!showtimeData) {
+      return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
+    }
+
+    // --- BƯỚC 2: KIỂM TRA GHẾ TRÙNG ---
+    const existingTickets = await Ticket.find({
+      showtime: showtimeId,
+      seatNumber: { $in: seats }
     });
-    res.status(201).json({ message: "Tạo đơn hàng thành công", order });
+
+    if (existingTickets.length > 0) {
+      return res.status(400).json({ message: "Ghế đã có người đặt, vui lòng chọn ghế khác!" });
+    }
+
+    // --- BƯỚC 3: TẠO MÃ ĐƠN HÀNG ---
+    const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    // --- BƯỚC 4: TẠO ORDER ---
+    const newOrder = await Order.create({
+      orderCode: orderCode,
+      user: userId,
+      showtime: showtimeId,
+      totalPrice: total,
+      paymentMethod: paymentMethod || "Momo",
+      status: "success", 
+      combos: combos || []
+    });
+
+    // --- BƯỚC 5: TẠO VÉ (TICKET) ---
+    // Bây giờ ta đã có showtimeData.movie để gán vào vé
+    const tickets = seats.map(seat => ({
+      movie: showtimeData.movie, // <--- QUAN TRỌNG: THÊM DÒNG NÀY ĐỂ HẾT LỖI
+      showtime: showtimeId,
+      user: userId,
+      order: newOrder._id,
+      seatNumber: seat,
+      price: showtimeData.price || 75000, // Lấy luôn giá từ showtime cho chuẩn
+      status: "active"
+    }));
+
+    await Ticket.insertMany(tickets);
+
+    res.status(201).json({ message: "Đặt vé thành công", order: newOrder });
+
   } catch (err) {
-    res.status(400).json({ message: "Lỗi khi tạo đơn hàng", error: err.message });
+    console.error("Lỗi đặt vé:", err);
+    res.status(500).json({ message: "Lỗi tạo đơn hàng", error: err.message });
   }
 };
 

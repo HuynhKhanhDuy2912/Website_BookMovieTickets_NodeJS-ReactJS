@@ -9,7 +9,7 @@ const orderSchema = new mongoose.Schema(
     orderCode: { type: String, unique: true },
     paymentMethod: {
       type: String,
-      enum: ["momo", "ZaloPay", "cash"],
+      enum: ["Momo", "ZaloPay", "cash"],
       default: "cash",
     },
     paymentStatus: { type: String, enum: ["unpaid", "paid"], default: "unpaid" },

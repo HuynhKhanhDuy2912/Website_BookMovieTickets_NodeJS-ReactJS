@@ -16,6 +16,10 @@ import MoviePage from "./pages/client/MoviePage";
 import CinemaPage from "./pages/client/CinemaPage";
 import ArticlePage from "./pages/client/ArticlePage";
 import ArticleDetailPage from "./pages/client/ArticleDetailPage";
+import MovieDetailPage from "./pages/client/MovieDetailPage";
+import SeatSelectionPage from "./pages/client/SeatSelectionPage";
+import CheckoutPage from "./pages/client/CheckoutPage";
+import BookingSuccessPage from "./pages/client/BookingSuccessPage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -57,15 +61,16 @@ function App() {
         <Route element={<ClientLayout />}>
           {/* Trang chủ khách hàng */}
           <Route path="/" element={<HomePage />} />
-
-          {/* Chi tiết phim */}
           <Route path="/movies" element={<MoviePage />} />
           <Route path="/cinemas" element={<CinemaPage />} />
           <Route path="/articles" element={<ArticlePage />} />
           <Route path="/articles/:id" element={<ArticleDetailPage />} />
-          {/* Đặt vé (Cần đăng nhập) */}
+          <Route path="/movie/:id" element={<MovieDetailPage />} />
+          <Route path="/booking/:showtimeId" element={<SeatSelectionPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/booking/success" element={<BookingSuccessPage />} />
           <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
-            <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} />
+            {/* <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} /> */}
             <Route path="/profile" element={<div className="p-10">Lịch sử vé</div>} />
           </Route>
         </Route>
