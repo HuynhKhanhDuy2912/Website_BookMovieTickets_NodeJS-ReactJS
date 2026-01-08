@@ -1,47 +1,42 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
-import { Armchair, ArrowLeft, Calendar, Clock, MapPin } from "lucide-react";
-
-// Cấu hình ghế giả lập (Nếu Database Room của bạn chưa có row/col)
-// Sau này bạn có thể lấy từ info Room: room.totalRows, room.totalCols
-const ROWS = 10; // 10 hàng (A -> J)
-const COLS = 12; // 12 cột (1 -> 12)
-const ROW_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+import { Armchair, ArrowLeft, Ban } from "lucide-react";
 
 export default function SeatSelectionPage() {
   const { showtimeId } = useParams();
   const navigate = useNavigate();
 
-  // State dữ liệu
   const [showtime, setShowtime] = useState(null);
-  const [bookedSeats, setBookedSeats] = useState([]); // Danh sách ghế đã bán ["A1", "B5"...]
+  const [bookedSeats, setBookedSeats] = useState([]); // List ghế đã bán
+  const [selectedSeats, setSelectedSeats] = useState([]); // List ghế đang chọn
   const [loading, setLoading] = useState(true);
 
-  // State chọn vé
-  const [selectedSeats, setSelectedSeats] = useState([]); // Ghế đang chọn ["C5", "C6"]
-  const ticketPrice = showtime?.price || 75000; // Giá vé (mặc định nếu ko có)
-
-  // --- 1. FETCH DATA ---
+  // 1. FETCH DỮ LIỆU
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Lấy thông tin suất chiếu (để biết phim gì, rạp nào)
-        // Lưu ý: Backend cần hỗ trợ get showtime by ID
-        const showtimeRes = await api.get(`/showtime`); 
-        // Vì bạn chưa có API getById cho showtime, mình lọc tạm ở client:
-        const foundShowtime = showtimeRes.data.find(s => s._id === showtimeId);
+
+        // A. Lấy thông tin phòng
+        const showtimeRes = await api.get(`/showtime/${showtimeId}`);
+        setShowtime(showtimeRes.data);
+
+        // B. Lấy thông tin vé đã bán (QUAN TRỌNG)
+        const ticketRes = await api.get(`/ticket/showtime/${showtimeId}`);
         
-        if (foundShowtime) {
-           setShowtime(foundShowtime);
-           // Gọi API lấy vé đã bán của suất này
-           const ticketRes = await api.get(`/ticket/showtime/${showtimeId}`);
-           // Giả sử Ticket model lưu ghế dạng "A1", "B2" trong trường seatNumber
-           // Hoặc nếu lưu row/col riêng thì bạn cần map lại thành chuỗi
-           const occupied = ticketRes.data.map(t => t.seatNumber); // ["A1", "A2"]
-           setBookedSeats(occupied);
+        // --- DEBUG LOG (Bật F12 -> Console để xem) ---
+        console.log("🔥 Dữ liệu vé thô từ API:", ticketRes.data);
+
+        if (Array.isArray(ticketRes.data)) {
+          const occupied = ticketRes.data
+            .map(t => t.seatNumber ? t.seatNumber.toString().trim() : null) // Chuyển thành chuỗi và cắt khoảng trắng
+            .filter(Boolean); // Loại bỏ null/undefined
+
+          console.log("🔒 Danh sách ghế bị khóa (Final):", occupied);
+          setBookedSeats(occupied);
         }
+
       } catch (err) {
         console.error("Lỗi tải dữ liệu:", err);
       } finally {
@@ -51,160 +46,148 @@ export default function SeatSelectionPage() {
     fetchData();
   }, [showtimeId]);
 
-  // --- 2. XỬ LÝ CHỌN GHẾ ---
-  const handleSelectSeat = (seatId) => {
-    if (bookedSeats.includes(seatId)) return; // Ghế đã bán thì ko làm gì
+  // 2. XỬ LÝ CHỌN GHẾ
+  const handleSelectSeat = (seat) => {
+    const seatNum = seat.seatNumber.trim();
+    
+    // Chặn nếu ghế bảo trì hoặc đã bán
+    if (seat.status === 'maintenance' || bookedSeats.includes(seatNum)) {
+        console.log(`🚫 Không thể chọn ghế ${seatNum} vì đã bị khóa.`);
+        return;
+    }
 
-    if (selectedSeats.includes(seatId)) {
-      // Nếu đã chọn -> Bỏ chọn
-      setSelectedSeats(selectedSeats.filter(id => id !== seatId));
+    if (selectedSeats.includes(seatNum)) {
+      setSelectedSeats(selectedSeats.filter(s => s !== seatNum));
     } else {
-      // Nếu chưa chọn -> Thêm vào (Giới hạn tối đa 8 ghế)
-      if (selectedSeats.length >= 8) return alert("Bạn chỉ được chọn tối đa 8 ghế!");
-      setSelectedSeats([...selectedSeats, seatId]);
+      if (selectedSeats.length >= 8) return alert("Tối đa 8 ghế!");
+      setSelectedSeats([...selectedSeats, seatNum]);
     }
   };
 
-  // --- 3. TIẾP TỤC (SANG TRANG THANH TOÁN) ---
+  // Tính tiền
+  const calculateTotal = () => {
+    if (!showtime) return 0;
+    return selectedSeats.reduce((total, seatNum) => {
+      const seatInfo = showtime.room.seats.find(s => s.seatNumber === seatNum);
+      let price = showtime.price || 75000;
+      if (seatInfo?.type === 'vip') price += 10000;
+      return total + price;
+    }, 0);
+  };
+
   const handleCheckout = () => {
-    if (selectedSeats.length === 0) return alert("Vui lòng chọn ít nhất 1 ghế!");
-    
-    // Chuyển sang trang thanh toán/combo, mang theo dữ liệu vé
-    // Bạn có thể dùng Context hoặc state của navigate
     navigate("/checkout", { 
-      state: { 
-        showtime, 
-        selectedSeats, 
-        totalPrice: selectedSeats.length * ticketPrice 
-      } 
+      state: { showtime, selectedSeats, totalPrice: calculateTotal() } 
     });
   };
 
-  if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500"></div></div>;
-  if (!showtime) return <div className="min-h-screen bg-gray-900 text-white flex justify-center pt-20">Không tìm thấy suất chiếu</div>;
+  if (loading || !showtime) return <div className="bg-gray-900 min-h-screen text-white flex justify-center items-center">Đang tải...</div>;
+
+  const { room } = showtime;
 
   return (
     <div className="bg-gray-900 min-h-screen text-white flex flex-col">
-      
-      {/* HEADER: INFO PHIM */}
-      <div className="bg-gray-800 p-4 shadow-md sticky top-0 z-10 border-b border-gray-700">
-         <div className="container mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-4">
-               <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-700 rounded-full transition">
-                  <ArrowLeft />
-               </button>
-               <div>
-                  <h2 className="text-xl font-bold text-yellow-500 uppercase">{showtime.movie?.title}</h2>
-                  <div className="flex gap-4 text-sm text-gray-400 mt-1">
-                     <span className="flex items-center gap-1"><MapPin size={14}/> {showtime.cinema?.name} - {showtime.room?.name}</span>
-                     <span className="flex items-center gap-1"><Calendar size={14}/> {new Date(showtime.startTime).toLocaleDateString()}</span>
-                     <span className="flex items-center gap-1"><Clock size={14}/> {new Date(showtime.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  </div>
-               </div>
-            </div>
-         </div>
-      </div>
+       {/* Header */}
+       <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center">
+          <button onClick={() => navigate(-1)} className="text-white p-2 hover:bg-gray-700 rounded-full"><ArrowLeft/></button>
+          <span className="ml-4 font-bold uppercase text-yellow-500 text-lg">{showtime.movie.title}</span>
+       </div>
 
-      {/* BODY: SƠ ĐỒ GHẾ */}
-      <div className="flex-1 overflow-auto p-4">
-         <div className="min-w-[800px] mx-auto flex flex-col items-center">
-            
-            {/* MÀN HÌNH (SCREEN) */}
-            <div className="w-2/3 h-2 bg-yellow-500/50 mb-1 rounded-full shadow-[0_10px_30px_rgba(234,179,8,0.3)]"></div>
-            <p className="text-gray-500 text-sm mb-12 uppercase tracking-[0.2em]">Màn hình</p>
+       {/* BODY */}
+       <div className="flex-1 p-4 overflow-auto flex justify-center">
+          <div className="w-full max-w-4xl flex flex-col items-center">
+             <div className="w-2/3 h-2 bg-yellow-500 shadow-[0_5px_20px_orange] mb-12 rounded-full mt-4"></div>
+             <p className="text-gray-500 text-sm mb-8 uppercase tracking-widest">Màn hình</p>
 
             {/* LƯỚI GHẾ */}
-            <div className="flex flex-col gap-3">
-               {Array.from({ length: ROWS }).map((_, rowIndex) => {
-                  const rowLabel = ROW_LABELS[rowIndex];
-                  return (
-                     <div key={rowLabel} className="flex items-center gap-3">
-                        {/* Tên hàng (A, B, C...) */}
-                        <span className="w-6 text-center text-gray-500 font-bold">{rowLabel}</span>
-                        
-                        {/* Các ghế trong hàng */}
-                        <div className="flex gap-2">
-                           {Array.from({ length: COLS }).map((_, colIndex) => {
-                              const seatNumber = `${rowLabel}${colIndex + 1}`;
-                              const isBooked = bookedSeats.includes(seatNumber);
-                              const isSelected = selectedSeats.includes(seatNumber);
+            <div 
+              className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${room.cols}, minmax(40px, 1fr))` }}
+            >
+                  {room.seats.map((seat) => {
+  const seatNum = seat.seatNumber.trim();
 
-                              return (
-                                 <button
-                                    key={seatNumber}
-                                    disabled={isBooked}
-                                    onClick={() => handleSelectSeat(seatNumber)}
-                                    className={`
-                                       w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 relative group
-                                       ${isBooked 
-                                          ? "bg-gray-700 cursor-not-allowed opacity-50" 
-                                          : isSelected 
-                                             ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/40 scale-110" 
-                                             : "bg-gray-800 border border-gray-600 hover:border-yellow-500 hover:text-yellow-500"
-                                       }
-                                    `}
-                                 >
-                                    <Armchair size={20} fill={isSelected ? "currentColor" : "none"} strokeWidth={2}/>
-                                    {/* Tooltip số ghế */}
-                                    <span className="absolute -top-8 bg-white text-black text-xs font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition pointer-events-none whitespace-nowrap z-10">
-                                       {seatNumber}
-                                    </span>
-                                 </button>
-                              );
-                           })}
-                        </div>
-                     </div>
-                  );
-               })}
+  // 1. KIỂM TRA TRẠNG THÁI
+  const isTaken = bookedSeats.includes(seatNum);     // Đã bán
+  const isMaintenance = seat.status === 'maintenance'; // Bảo trì
+  const isSelected = selectedSeats.includes(seatNum); // Đang chọn
+  const isVip = seat.type === 'vip';
+
+  // 2. XÁC ĐỊNH MÀU SẮC GIAO DIỆN (Visual)
+  let seatClasses = "border-gray-600 text-gray-400 hover:border-white hover:text-white cursor-pointer"; 
+  
+  if (isMaintenance) {
+     seatClasses = "bg-red-900/20 border-red-900 text-red-700 cursor-not-allowed"; 
+  
+  } else if (isTaken) {
+     // --- THAY ĐỔI Ở ĐÂY ---
+     // Thay vì làm mờ nhẹ, ta làm tối hẳn và chìm đi
+     // bg-gray-900: Nền rất tối
+     // border-transparent: Không cần viền
+     // text-gray-600: Chữ màu xám tối, khó đọc hơn
+     // opacity-30: Làm mờ tổng thể xuống còn 30%
+     seatClasses = "bg-gray-600 border-transparent text-gray-400 opacity-50 cursor-not-allowed";
+     // ---------------------
+
+  } else if (isSelected) {
+     seatClasses = "bg-yellow-500 text-black border-yellow-500 font-bold shadow-lg scale-110 z-10"; 
+  } else if (isVip) {
+     seatClasses = "bg-gray-800 border-orange-500 text-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.15)]"; 
+  } else {
+     seatClasses += " bg-gray-800"; 
+  }
+
+  return (
+     <button
+        key={seatNum}
+        disabled={isTaken || isMaintenance}
+        onClick={() => handleSelectSeat(seat)}
+        className={`
+           w-10 h-10 rounded-lg flex items-center justify-center text-xs transition-all duration-200 relative group border
+           ${seatClasses}
+        `}
+     >
+        {/* --- THAY ĐỔI Ở ĐÂY --- */}
+        {/* Nếu bảo trì thì hiện icon Ban, còn lại (kể cả đã bán) vẫn hiện số ghế */}
+        {isMaintenance ? <Ban size={14}/> : seatNum}
+        {/* --------------------- */}
+
+        {/* Tooltip giữ nguyên */}
+        <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-black text-xs font-bold px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition pointer-events-none whitespace-nowrap shadow-lg z-20">
+           {isMaintenance 
+              ? "Bảo trì" 
+              : isTaken 
+                 ? "Đã bán" 
+                 : `${seatNum} - ${isVip ? 'VIP' : 'Thường'}`
+           }
+           <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45"></span>
+        </span>
+     </button>
+  );
+})}
             </div>
 
-            {/* CHÚ THÍCH */}
-            <div className="flex gap-8 mt-12">
-               <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-gray-800 border border-gray-600 rounded"></div>
-                  <span className="text-sm text-gray-400">Ghế trống</span>
-               </div>
-               <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-yellow-500 rounded"></div>
-                  <span className="text-sm text-gray-400">Đang chọn</span>
-               </div>
-               <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-gray-700 opacity-50 rounded"></div>
-                  <span className="text-sm text-gray-400">Đã bán</span>
-               </div>
-            </div>
+             {/* Chú thích màu sắc */}
+             <div className="flex gap-4 mt-12 text-sm text-gray-400 justify-center">
+                <div className="flex items-center gap-2"><div className="w-5 h-5 bg-gray-800 border border-gray-600 rounded"></div> Thường</div>
+                <div className="flex items-center gap-2"><div className="w-5 h-5 bg-gray-800 border border-orange-500 rounded"></div> VIP</div>
+                <div className="flex items-center gap-2"><div className="w-5 h-5 bg-yellow-500 rounded"></div> Đang chọn</div>
+                <div className="flex items-center gap-2"><div className="w-5 h-5 bg-gray-700 opacity-50 rounded"></div> Đã bán</div>
+             </div>
+          </div>
+       </div>
 
-         </div>
-      </div>
-
-      {/* FOOTER: THANH TOÁN */}
-      <div className="bg-white text-black p-4 shadow-lg sticky bottom-0 z-20">
-         <div className="container mx-auto flex justify-between items-center">
-            <div>
-               <p className="text-sm text-gray-500">Ghế đã chọn:</p>
-               <p className="font-bold text-lg">
-                  {selectedSeats.length > 0 ? selectedSeats.join(", ") : "Chưa chọn ghế"}
-               </p>
-            </div>
-            
-            <div className="flex items-center gap-6">
-               <div className="text-right">
-                  <p className="text-sm text-gray-500">Tổng cộng:</p>
-                  <p className="text-2xl font-bold text-red-600">
-                     {(selectedSeats.length * ticketPrice).toLocaleString()} đ
-                  </p>
-               </div>
-               <button 
-                  onClick={handleCheckout}
-                  disabled={selectedSeats.length === 0}
-                  className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-lg font-bold text-lg uppercase transition disabled:bg-gray-400 disabled:cursor-not-allowed"
-               >
-                  Tiếp Tục
-               </button>
-            </div>
-         </div>
-      </div>
-
+       {/* Footer thanh toán */}
+       <div className="bg-white p-4 text-black flex justify-between items-center sticky bottom-0 shadow-[0_-5px_10px_rgba(0,0,0,0.2)]">
+          <div>Ghế: <b className="text-lg text-red-600">{selectedSeats.join(", ")}</b></div>
+          <div className="flex gap-4 items-center">
+             <div className="text-right">
+                <p className="text-xs text-gray-500">Tạm tính</p>
+                <p className="text-xl font-bold text-red-600">{calculateTotal().toLocaleString()} đ</p>
+             </div>
+             <button onClick={handleCheckout} disabled={selectedSeats.length===0} className="bg-red-600 hover:bg-red-700 transition text-white px-8 py-2 rounded-lg font-bold disabled:bg-gray-300 disabled:cursor-not-allowed">ĐẶT VÉ</button>
+          </div>
+       </div>
     </div>
   );
 }

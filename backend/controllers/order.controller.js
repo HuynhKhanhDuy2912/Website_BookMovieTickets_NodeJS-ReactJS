@@ -1,50 +1,66 @@
 const Order = require("../models/Order");
 const Ticket = require("../models/Ticket");
-// Tạo đơn hàng mới (User đặt vé, combo, v.v.)
+const Showtime = require("../models/Showtime");
+
+// --- 1. TẠO ĐƠN HÀNG MỚI ---
 exports.createOrder = async (req, res) => {
   try {
-    const { showtimeId, userId, seats, total, combos, paymentMethod } = req.body;
+    // Lưu ý: Frontend có thể gửi 'total' hoặc 'totalPrice', ta map về 1 biến finalPrice
+    const { showtimeId, userId, seats, total, totalPrice, combos, paymentMethod } = req.body;
+    const finalPrice = totalPrice || total;
 
-    // --- BƯỚC 1: LẤY THÔNG TIN SHOWTIME ĐỂ BIẾT MOVIE ID ---
+    // A. LẤY THÔNG TIN SHOWTIME (để lấy Movie ID và giá vé chuẩn)
     const showtimeData = await Showtime.findById(showtimeId);
     if (!showtimeData) {
       return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
     }
 
-    // --- BƯỚC 2: KIỂM TRA GHẾ TRÙNG ---
+    // B. KIỂM TRA GHẾ TRÙNG (QUAN TRỌNG NHẤT)
+    // Bước này chặn việc 2 người đặt cùng 1 ghế
     const existingTickets = await Ticket.find({
       showtime: showtimeId,
       seatNumber: { $in: seats }
     });
 
     if (existingTickets.length > 0) {
-      return res.status(400).json({ message: "Ghế đã có người đặt, vui lòng chọn ghế khác!" });
+      const takenSeats = existingTickets.map(t => t.seatNumber).join(", ");
+      return res.status(400).json({ 
+        message: `Ghế ${takenSeats} đã vừa có người khác đặt. Vui lòng chọn ghế khác!` 
+      });
     }
 
-    // --- BƯỚC 3: TẠO MÃ ĐƠN HÀNG ---
+    // C. TẠO MÃ ĐƠN HÀNG (Unique)
     const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    // --- BƯỚC 4: TẠO ORDER ---
+    // D. TẠO ORDER (Lưu cả seats và combos chi tiết để hiện ở Profile)
+    // Map lại combo cho đúng cấu trúc Schema mới
+    const processedCombos = combos ? combos.map(c => ({
+      comboId: c.comboId || c._id, // Tùy frontend gửi ID ở trường nào
+      name: c.name,                // Lưu tên để hiển thị nhanh
+      quantity: c.quantity,
+      price: c.price
+    })) : [];
+
     const newOrder = await Order.create({
-      orderCode: orderCode,
       user: userId,
       showtime: showtimeId,
-      totalPrice: total,
-      paymentMethod: paymentMethod || "Momo",
-      status: "success", 
-      combos: combos || []
+      orderCode: orderCode,
+      seats: seats,             // <--- QUAN TRỌNG: Lưu mảng ghế ["A1", "A2"] để hiện ở Profile
+      totalPrice: finalPrice,
+      paymentMethod: paymentMethod || "Cash",
+      status: "success",        // Giả lập thanh toán thành công
+      combos: processedCombos
     });
 
-    // --- BƯỚC 5: TẠO VÉ (TICKET) ---
-    // Bây giờ ta đã có showtimeData.movie để gán vào vé
+    // E. TẠO TICKET (Để khóa ghế trong database, chặn người sau đặt)
     const tickets = seats.map(seat => ({
-      movie: showtimeData.movie, // <--- QUAN TRỌNG: THÊM DÒNG NÀY ĐỂ HẾT LỖI
+      movie: showtimeData.movie, // Lấy ID phim từ showtime
       showtime: showtimeId,
       user: userId,
       order: newOrder._id,
-      seatNumber: seat,
-      price: showtimeData.price || 75000, // Lấy luôn giá từ showtime cho chuẩn
-      status: "active"
+      seatNumber: seat,          // <--- QUAN TRỌNG: Tên field phải là seatNumber khớp với Ticket Model
+      price: showtimeData.price || 75000, 
+      status: "booked"           // Đánh dấu ghế đã bán
     }));
 
     await Ticket.insertMany(tickets);
@@ -57,27 +73,45 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// Lấy danh sách đơn hàng của chính người dùng
+// --- 2. LẤY ĐƠN HÀNG CỦA TÔI (PROFILE) ---
 exports.getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id });
+    const orders = await Order.find({ user: req.user.id })
+      .populate({
+        path: "showtime",
+        populate: [
+            { path: "movie", select: "title posterUrl duration" }, 
+            { path: "cinema", select: "name" },   
+            { path: "room", select: "name" }      
+        ]
+      })
+      .sort({ createdAt: -1 }); 
+
     res.json(orders);
   } catch (err) {
-    res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng", error: err.message });
+    res.status(500).json({ message: "Lỗi lấy danh sách vé", error: err.message });
   }
 };
 
-// Lấy tất cả đơn hàng (staff + admin)
+// --- 3. LẤY TẤT CẢ ĐƠN (ADMIN) ---
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate("user");
+    const orders = await Order.find()
+      .populate("user", "name email")
+      .populate({
+        path: "showtime",
+        select: "startTime",
+        populate: { path: "movie", select: "title" }
+      })
+      .sort({ createdAt: -1 });
+      
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: "Lỗi khi lấy danh sách tất cả đơn hàng", error: err.message });
   }
 };
 
-// Cập nhật đơn hàng (staff + admin)
+// --- 4. CẬP NHẬT ĐƠN (ADMIN) ---
 exports.updateOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -88,12 +122,16 @@ exports.updateOrder = async (req, res) => {
   }
 };
 
-// Xóa đơn hàng (chỉ admin)
+// --- 5. XÓA ĐƠN (ADMIN) ---
 exports.deleteOrder = async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
-    res.json({ message: "Xóa đơn hàng thành công" });
+    
+    // Lưu ý: Xóa Order thì phải xóa luôn Ticket liên quan để nhả ghế ra
+    await Ticket.deleteMany({ order: req.params.id });
+
+    res.json({ message: "Xóa đơn hàng và vé liên quan thành công" });
   } catch (err) {
     res.status(500).json({ message: "Lỗi khi xóa đơn hàng", error: err.message });
   }

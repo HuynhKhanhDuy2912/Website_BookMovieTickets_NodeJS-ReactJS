@@ -8,7 +8,7 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import AdminLayout from "./pages/admin/AdminLayout";
 import ClientLayout from "./pages/client/ClientLayout"; // Bạn cần tạo file này như hướng dẫn trên
 
-// Auth Pages
+// Client Pages
 import Login from "./pages/login";
 import Register from "./pages/register";
 import HomePage from "./pages/client/Home";
@@ -20,6 +20,7 @@ import MovieDetailPage from "./pages/client/MovieDetailPage";
 import SeatSelectionPage from "./pages/client/SeatSelectionPage";
 import CheckoutPage from "./pages/client/CheckoutPage";
 import BookingSuccessPage from "./pages/client/BookingSuccessPage";
+import ProfilePage from "./pages/client/ProfilePage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -71,7 +72,7 @@ function App() {
           <Route path="/booking/success" element={<BookingSuccessPage />} />
           <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
             {/* <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} /> */}
-            <Route path="/profile" element={<div className="p-10">Lịch sử vé</div>} />
+            <Route path="/profile" element={<ProfilePage/>} />
           </Route>
         </Route>
 

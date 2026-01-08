@@ -16,15 +16,20 @@ exports.getAllShowtimes = async (req, res) => {
 // Lấy suất chiếu theo ID
 exports.getShowtimeById = async (req, res) => {
   try {
-    const showtime = await Showtime.findById(req.params.id)
-      .populate("movie", "title duration")
-      .populate("cinema", "name city")
-      .populate("room", "name seatCount");
+    const { id } = req.params;
+    const showtime = await Showtime.findById(id)
+      .populate("movie")
+      .populate("cinema")
+      .populate({
+        path: "room",
+        select: "name seats rows cols" // Quan trọng: lấy seats ra để vẽ ghế
+      });
 
     if (!showtime) return res.status(404).json({ message: "Không tìm thấy suất chiếu" });
+
     res.json(showtime);
   } catch (err) {
-    res.status(500).json({ message: "Lỗi khi lấy thông tin suất chiếu", error: err.message });
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
 

@@ -19,7 +19,7 @@ const roomSchema = new mongoose.Schema(
       {
         seatNumber: String,
         type: { type: String, enum: ["standard", "vip"], default: "standard" },
-        status: { type: String, enum: ["available", "booked"], default: "available" },
+        status: { type: String, enum: ["active", "maintenance"], default: "active" },
       },
     ],
   },

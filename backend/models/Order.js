@@ -3,16 +3,41 @@ const mongoose = require("mongoose");
 const orderSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    tickets: [{ type: mongoose.Schema.Types.ObjectId, ref: "Ticket" }],
-    combos: [{ type: mongoose.Schema.Types.ObjectId, ref: "Combo" }],
-    totalAmount: Number,
+    
+    // THÊM: Để biết đơn này thuộc suất chiếu nào (lấy tên phim, rạp)
+    showtime: { type: mongoose.Schema.Types.ObjectId, ref: "Showtime", required: true },
+
+    // THÊM: Để hiển thị nhanh danh sách ghế ở trang Profile (VD: ["A1", "A2"])
+    seats: [{ type: String }], 
+
+    // SỬA: Lưu chi tiết combo (số lượng, tên, giá lúc mua)
+    combos: [
+      {
+        comboId: { type: mongoose.Schema.Types.ObjectId, ref: "Combo" },
+        name: String,
+        quantity: Number,
+        price: Number
+      }
+    ],
+
+    // SỬA: Đổi tên thành totalPrice cho khớp với Controller
+    totalPrice: { type: Number, required: true },
+    
     orderCode: { type: String, unique: true },
+    
     paymentMethod: {
       type: String,
-      enum: ["Momo", "ZaloPay", "cash"],
-      default: "cash",
+      // Mở rộng thêm các loại thanh toán
+      enum: ["Momo", "ZaloPay", "VNPAY", "ATM", "Card", "Cash"], 
+      default: "Cash",
     },
-    paymentStatus: { type: String, enum: ["unpaid", "paid"], default: "unpaid" },
+
+    // Status của đơn hàng
+    status: { 
+      type: String, 
+      enum: ["pending", "success", "failed", "cancelled"], 
+      default: "pending" 
+    },
   },
   { timestamps: true }
 );
