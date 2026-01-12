@@ -82,15 +82,18 @@ exports.getShowtimesByMovie = async (req, res) => {
   }
 };
 
-// Lấy suất chiếu theo rạp
 exports.getShowtimesByCinema = async (req, res) => {
   try {
-    const showtimes = await Showtime.find({ cinema: req.params.cinemaId })
-      .populate("movie", "title duration")
-      .populate("room", "name seatCount");
+    const showtimes = await Showtime.find({ 
+        cinema: req.params.cinemaId,
+        startTime: { $gte: new Date() } 
+    })
+    .populate("movie", "title duration posterUrl description") 
+    .populate("room", "name seatCount")
+    .sort({ startTime: 1 });
 
     res.json(showtimes);
   } catch (err) {
-    res.status(500).json({ message: "Lỗi khi lấy suất chiếu theo rạp", error: err.message });
+    res.status(500).json({ message: "Lỗi", error: err.message });
   }
 };

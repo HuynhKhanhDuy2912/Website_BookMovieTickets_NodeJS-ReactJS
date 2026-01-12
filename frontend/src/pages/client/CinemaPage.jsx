@@ -133,7 +133,7 @@ export default function CinemaPage() {
                    <div className="flex gap-3 mt-4 pt-4 border-t border-gray-700">
                       {/* Vì bạn chưa làm trang chi tiết rạp, tạm thời link về trang chọn phim hoặc alert */}
                       <Link 
-                        to={`/movies`} // Hoặc /cinema/${cinema._id} nếu sau này làm
+                        to={`/cinema/${cinema._id}`}
                         className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-2.5 rounded-lg text-center transition flex items-center justify-center gap-2"
                       >
                         <Building2 size={18} /> Xem Lịch Chiếu

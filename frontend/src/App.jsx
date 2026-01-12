@@ -21,6 +21,7 @@ import SeatSelectionPage from "./pages/client/SeatSelectionPage";
 import CheckoutPage from "./pages/client/CheckoutPage";
 import BookingSuccessPage from "./pages/client/BookingSuccessPage";
 import ProfilePage from "./pages/client/ProfilePage";
+import CinemaDetailPage from "./pages/client/CinemaDetailPage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -63,6 +64,7 @@ function App() {
           {/* Trang chủ khách hàng */}
           <Route path="/" element={<HomePage />} />
           <Route path="/movies" element={<MoviePage />} />
+          <Route path="/cinema/:id" element={<CinemaDetailPage />} />
           <Route path="/cinemas" element={<CinemaPage />} />
           <Route path="/articles" element={<ArticlePage />} />
           <Route path="/articles/:id" element={<ArticleDetailPage />} />

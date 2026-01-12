@@ -173,7 +173,7 @@ export default function MoviePage() {
                    <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition duration-300 flex flex-col justify-center items-center gap-3 p-4">
                       {movie.status === 'now_showing' && (
                         <Link 
-                          to={`/booking/${movie._id}`} 
+                          to={`/movie/${movie._id}`} 
                           className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-2 rounded-full flex items-center justify-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition duration-300"
                         >
                            <Ticket size={18}/> Mua Vé

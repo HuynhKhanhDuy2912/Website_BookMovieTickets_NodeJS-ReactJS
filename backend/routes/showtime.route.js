@@ -8,5 +8,6 @@ router.get("/:id", showtimeController.getShowtimeById);
 router.post("/", verifyToken, authorizeRoles("staff", "admin"), showtimeController.createShowtime);
 router.put("/:id", verifyToken, authorizeRoles("staff", "admin"), showtimeController.updateShowtime);
 router.delete("/:id", verifyToken, authorizeRoles("admin"), showtimeController.deleteShowtime);
+router.get("/cinema/:cinemaId", showtimeController.getShowtimesByCinema);
 
 module.exports = router;
