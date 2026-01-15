@@ -22,7 +22,7 @@ app.use("/api/ticket", require("./routes/ticket.route"));
 app.use("/api/upload", require("./routes/upload.route"));
 app.use("/api/user", require("./routes/user.route"));
 app.use("/api/review", require("./routes/review.route"));
-
+app.use('/api/admin', require("./routes/index"));
 
 
 const PORT = process.env.PORT || 5000;

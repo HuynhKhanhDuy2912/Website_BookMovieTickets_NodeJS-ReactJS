@@ -32,7 +32,7 @@ import Room from "./pages/admin/room";
 import Showtime from "./pages/admin/showtime";
 import Ticket from "./pages/admin/Tickets";
 import User from "./pages/admin/user";
-
+import DashboardPage from "./pages/admin/DashboardPage";
 // Client Pages (Ví dụ - bạn sẽ tạo sau)
 // import HomePage from "./pages/client/HomePage";
 // import MovieDetail from "./pages/client/MovieDetail";
@@ -100,7 +100,7 @@ function App() {
             <Route path="room" element={<Room />} />
             <Route path="showtime" element={<Showtime />} />
             <Route path="ticket" element={<Ticket />} />
-
+            <Route path="admin" element={<DashboardPage />} />
           </Route>
         </Route>
 

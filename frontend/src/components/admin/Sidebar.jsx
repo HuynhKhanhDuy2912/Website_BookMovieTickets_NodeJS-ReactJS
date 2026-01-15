@@ -43,6 +43,8 @@ export default function Sidebar() {
     { path: "/admin/showtime", label: "Suất chiếu", icon: <CalendarClock size={20} /> },
     { path: "/admin/ticket", label: "Vé đặt", icon: <Ticket size={20} /> },
     { path: "/admin/user", label: "Tài khoản", icon: <Users size={20} /> },
+    { path: "/admin/admin", label: "Báo cáo thống kê", icon: <Users size={20} /> },
+
   ];
 
   return (
