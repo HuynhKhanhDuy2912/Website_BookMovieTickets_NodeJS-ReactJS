@@ -1,9 +1,10 @@
 const Order = require("../models/Order");
 
+// 1. Thống kê Doanh thu (Biểu đồ dòng tiền)
 exports.getRevenueStats = async (req, res) => {
   try {
-    const { type, year, month, week, day } = req.query; 
-    // type: 'all' | 'year' | 'month' | 'week'
+    const { type, year, month } = req.query; 
+    // type: 'all' | 'year' | 'month'
 
     let matchStage = { status: "success" }; // Chỉ tính đơn đã thanh toán
     let groupId = {};
@@ -16,32 +17,30 @@ exports.getRevenueStats = async (req, res) => {
     // --- LOGIC AGGREGATION ---
     switch (type) {
       case "all":
-        // 1. TẤT CẢ CÁC NĂM: Gom nhóm theo Năm
-        // Output: [{ _id: 2024, total: 500 }, { _id: 2025, total: 1000 }]
+        // Gom nhóm theo Năm
         groupId = { $year: "$createdAt" };
         break;
 
       case "year":
-        // 2. THEO NĂM CỤ THỂ: Lọc năm đó -> Gom nhóm theo Tháng
+        // Lọc năm đó -> Gom nhóm theo Tháng
         const startOfYear = new Date(`${selectedYear}-01-01`);
         const endOfYear = new Date(`${selectedYear}-12-31T23:59:59.999Z`);
         
         matchStage.createdAt = { $gte: startOfYear, $lte: endOfYear };
-        groupId = { $month: "$createdAt" }; // Trả về 1, 2, ..., 12
+        groupId = { $month: "$createdAt" }; 
         break;
 
       case "month":
-        // 3. THEO THÁNG CỤ THỂ: Lọc tháng đó -> Gom nhóm theo Ngày
+        // Lọc tháng đó -> Gom nhóm theo Ngày
         const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
         const endOfMonth = new Date(selectedYear, selectedMonth, 0, 23, 59, 59);
 
         matchStage.createdAt = { $gte: startOfMonth, $lte: endOfMonth };
-        groupId = { $dayOfMonth: "$createdAt" }; // Trả về 1, 2, ..., 31
+        groupId = { $dayOfMonth: "$createdAt" }; 
         break;
 
-      // case "week": Xử lý tương tự month nhưng range ngắn hơn (7 ngày)
       default:
-        // Mặc định lấy 7 ngày gần nhất
+        // Mặc định lấy theo ngày trong tháng hiện tại
         groupId = { $dayOfMonth: "$createdAt" };
     }
 
@@ -58,8 +57,7 @@ exports.getRevenueStats = async (req, res) => {
       { $sort: sortStage }
     ]);
 
-    // Format dữ liệu trả về cho đẹp để Frontend dễ dùng
-    // Ví dụ: Map _id thành label (Tháng 1, Tháng 2...)
+    // Format dữ liệu trả về
     const formattedStats = stats.map(item => ({
       label: type === 'year' ? `Tháng ${item._id}` 
            : type === 'month' ? `Ngày ${item._id}` 
@@ -79,6 +77,83 @@ exports.getRevenueStats = async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ message: "Lỗi thống kê", error: err.message });
+    res.status(500).json({ message: "Lỗi thống kê doanh thu", error: err.message });
   }
+};
+
+// 2. Thống kê Danh sách Phim (Tất cả)
+exports.getMovieStats = async (req, res) => {
+  try {
+    const stats = await Order.aggregate([
+      { $match: { status: "success" } }, // Chỉ lấy đơn thành công
+      
+      // Lookup sang showtimes để lấy phim
+      {
+        $lookup: {
+          from: "showtimes",
+          localField: "showtime",
+          foreignField: "_id",
+          as: "showtimeInfo"
+        }
+      },
+      { $unwind: "$showtimeInfo" },
+
+      // Group theo Phim
+      {
+        $group: {
+          _id: "$showtimeInfo.movie",
+          totalRevenue: { $sum: "$totalPrice" }, 
+          ticketCount: { $sum: { $size: "$seats" } } 
+        }
+      },
+
+      // Lookup sang Movies lấy tên
+      {
+        $lookup: {
+          from: "movies",
+          localField: "_id",
+          foreignField: "_id",
+          as: "movieInfo"
+        }
+      },
+      { $unwind: "$movieInfo" },
+
+      {
+        $project: {
+          _id: 0,
+          title: "$movieInfo.title",
+          revenue: "$totalRevenue",
+          tickets: "$ticketCount"
+        }
+      },
+      { $sort: { revenue: -1 } } // Sắp xếp từ cao xuống thấp
+    ]);
+
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi thống kê phim", error: err.message });
+  }
+};
+
+// 3. Thống kê Danh sách Combo (Tất cả)
+exports.getComboStats = async (req, res) => {
+    try {
+        const stats = await Order.aggregate([
+            { $match: { status: "success" } },
+            { $unwind: "$combos" }, // Tách mảng combo ra từng dòng riêng lẻ
+
+            // Group theo Tên Combo
+            {
+                $group: {
+                    _id: "$combos.name", 
+                    totalQuantity: { $sum: "$combos.quantity" }, 
+                }
+            },
+            { $sort: { totalQuantity: -1 } }
+        ]);
+
+        res.json(stats);
+    } catch (err) {
+        res.status(500).json({ message: "Lỗi thống kê combo", error: err.message });
+    }
 };
