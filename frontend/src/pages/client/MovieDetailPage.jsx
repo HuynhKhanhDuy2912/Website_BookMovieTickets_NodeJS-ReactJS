@@ -6,23 +6,16 @@ import {
   ChevronRight, Ticket, User, ArrowLeft 
 } from "lucide-react";
 
-// --- 1. HELPER XỬ LÝ ẢNH (QUAN TRỌNG) ---
-// Giúp hiển thị ảnh chuẩn xác dù dữ liệu là chuỗi hay object Cloudinary
+// --- 1. HELPER XỬ LÝ ẢNH ---
 const getImageUrl = (imageField) => {
   if (!imageField) return "https://placehold.co/400x600?text=No+Image";
-
-  // Trường hợp 1: Dữ liệu là OBJECT (Cloudinary)
   if (typeof imageField === 'object' && imageField !== null) {
     return imageField.secure_url || imageField.url || imageField.path || "https://placehold.co/400x600?text=Error+Obj";
   }
-
-  // Trường hợp 2: Dữ liệu là CHUỖI
   if (typeof imageField === 'string') {
     if (imageField.startsWith("http")) return imageField;
-    // Nếu là ảnh local -> Nối port backend
     return `http://localhost:5000/${imageField.replace(/\\/g, '/').replace(/^\//, '')}`;
   }
-
   return "https://placehold.co/400x600?text=Format+Error";
 };
 
@@ -60,16 +53,14 @@ export default function MovieDetailPage() {
       try {
         setLoading(true);
         
-        // Gọi song song 3 API
         const [movieRes, showtimeRes, reviewRes] = await Promise.all([
           api.get(`/movie/${id}`),             
           api.get(`/showtime`),                
-          api.get(`/review?movieId=${id}`)     // Nếu chưa có API review thì mảng rỗng
+          api.get(`/review?movieId=${id}`)     
         ]);
 
         setMovie(movieRes.data);
         
-        // Lọc suất chiếu của phim này
         const allShowtimes = Array.isArray(showtimeRes.data) ? showtimeRes.data : [];
         const movieShowtimes = allShowtimes.filter(st => 
             (st.movie && (st.movie._id === id || st.movie === id))
@@ -120,9 +111,8 @@ export default function MovieDetailPage() {
   return (
     <div className="bg-gray-900 min-h-screen text-white pb-20">
       
-      {/* ================= HERO SECTION (BACKDROP + INFO) ================= */}
+      {/* ================= HERO SECTION ================= */}
       <div className="relative h-[500px] md:h-[600px] w-full overflow-hidden">
-        {/* Backdrop mờ (Dùng ảnh poster làm nền) */}
         <div 
           className="absolute inset-0 bg-cover bg-center blur-sm opacity-50 scale-110"
           style={{ backgroundImage: `url(${getImageUrl(movie.posterUrl)})` }}
@@ -131,12 +121,10 @@ export default function MovieDetailPage() {
 
         <div className="container mx-auto px-4 h-full relative z-10 flex flex-col md:flex-row items-center md:items-end pb-10 gap-8 pt-20 md:pt-0">
           
-          {/* Nút Quay lại (Mobile only) */}
           <Link to="/" className="absolute top-4 left-4 md:hidden text-white bg-black/50 p-2 rounded-full">
             <ArrowLeft size={24} />
           </Link>
 
-          {/* Poster Chính (Dùng hàm getImageUrl) */}
           <div className="w-48 md:w-64 shrink-0 rounded-lg overflow-hidden shadow-2xl border-2 border-white/20 relative group">
              <img 
                src={getImageUrl(movie.posterUrl)} 
@@ -149,7 +137,6 @@ export default function MovieDetailPage() {
              </div>
           </div>
 
-          {/* Thông tin Text */}
           <div className="flex-1 text-center md:text-left">
              <span className={`text-xs font-bold px-2 py-1 rounded uppercase mb-3 inline-block ${
                 movie.status === 'now_showing' ? 'bg-green-600 text-white' : 'bg-orange-500 text-white'
@@ -173,7 +160,6 @@ export default function MovieDetailPage() {
                </span>
              </div>
 
-             {/* Nút Action */}
              <div className="flex gap-4 justify-center md:justify-start">
                {movie.trailerUrl && (
                  <button 
@@ -187,7 +173,7 @@ export default function MovieDetailPage() {
                   onClick={() => document.getElementById('booking-section').scrollIntoView({ behavior: 'smooth' })}
                   className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition shadow-lg hover:shadow-yellow-500/40"
                >
-                 <Ticket size={20}/> Mua Vé
+                  <Ticket size={20}/> Mua Vé
                </button>
              </div>
           </div>
@@ -197,7 +183,7 @@ export default function MovieDetailPage() {
       {/* ================= NỘI DUNG CHÍNH ================= */}
       <div className="container mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
         
-        {/* CỘT TRÁI: LỊCH CHIẾU & NỘI DUNG (Chiếm 2/3) */}
+        {/* CỘT TRÁI: LỊCH CHIẾU & NỘI DUNG */}
         <div className="lg:col-span-2">
           
           {/* 1. Nội dung phim */}
@@ -258,21 +244,41 @@ export default function MovieDetailPage() {
                                </div>
                             </div>
                             
-                            {/* List Giờ chiếu */}
+                            {/* List Giờ chiếu (ĐÃ CẬP NHẬT LOGIC ẨN GIỜ) */}
                             <div>
                                <span className="text-xs font-bold text-gray-500 mb-3 block uppercase tracking-wider">2D Phụ đề</span>
                                <div className="flex flex-wrap gap-3">
                                   {times
                                     .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
-                                    .map(st => (
-                                      <Link 
-                                         key={st._id} 
-                                         to={`/booking/${st._id}`} 
-                                         className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm"
-                                      >
-                                         {new Date(st.startTime).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
-                                      </Link>
-                                  ))}
+                                    .map(st => {
+                                      const now = new Date();
+                                      const startTime = new Date(st.startTime);
+                                      // Kiểm tra xem suất chiếu đã qua chưa
+                                      const isExpired = startTime <= now;
+
+                                      if (isExpired) {
+                                        return (
+                                          <span 
+                                            key={st._id} 
+                                            className="px-5 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-500 text-sm font-bold cursor-not-allowed select-none opacity-60"
+                                            title="Suất chiếu đã bắt đầu"
+                                          >
+                                            {startTime.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
+                                          </span>
+                                        );
+                                      }
+
+                                      return (
+                                        <Link 
+                                           key={st._id} 
+                                           to={`/booking/${st._id}`} 
+                                           className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm"
+                                        >
+                                           {startTime.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
+                                        </Link>
+                                      );
+                                    })
+                                  }
                                </div>
                             </div>
                          </div>
@@ -325,14 +331,13 @@ export default function MovieDetailPage() {
 
         </div>
 
-        {/* CỘT PHẢI: PHIM LIÊN QUAN (Sidebar) */}
+        {/* CỘT PHẢI: PHIM LIÊN QUAN */}
         <div className="hidden lg:block">
            <div className="bg-gray-800 rounded-xl p-6 sticky top-24 border border-gray-700 shadow-xl">
               <h3 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
                  <Star size={20} className="text-yellow-500" fill="currentColor"/> Phim Đang Hot
               </h3>
               <div className="space-y-5">
-                 {/* Placeholder cho Phim liên quan */}
                  {[1, 2, 3, 4].map(i => (
                     <div key={i} className="flex gap-4 group cursor-pointer border-b border-gray-700 pb-4 last:border-0 last:pb-0">
                        <div className="w-16 h-24 bg-gray-700 rounded-lg overflow-hidden shrink-0 shadow-md">
