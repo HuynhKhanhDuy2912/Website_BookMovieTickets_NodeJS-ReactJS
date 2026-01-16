@@ -7,7 +7,7 @@ import {
   DollarSign, Calendar, TrendingUp, Film, Utensils, Ticket 
 } from "lucide-react";
 
-export default function DashboardPage() {
+export default function Dashboard() {
   // --- STATE ---
   const [revenueStats, setRevenueStats] = useState([]);
   const [movieStats, setMovieStats] = useState([]);     

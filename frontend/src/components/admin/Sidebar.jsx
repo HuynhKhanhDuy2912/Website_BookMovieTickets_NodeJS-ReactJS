@@ -12,7 +12,7 @@ import {
   Ticket, 
   Users, 
   LogOut, 
-  Home 
+  Home
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -34,17 +34,16 @@ export default function Sidebar() {
 
   // Danh sách menu để map cho gọn
   const menuItems = [
-    { path: "/admin/order", label: "Quản lý Đơn hàng", icon: <ShoppingBag size={20} /> },
+    { path: "/admin/dashboard", label: "Báo cáo thống kê", icon: <LayoutDashboard size={20} /> },    
     { path: "/admin/movie", label: "Quản lý Phim", icon: <Clapperboard size={20} /> },
     { path: "/admin/combo", label: "Quản lý Combo", icon: <Utensils size={20} /> },
     { path: "/admin/cinema", label: "Quản lý Rạp", icon: <MapPin size={20} /> },
     { path: "/admin/articles", label: "Tin tức & Sự kiện", icon: <Newspaper size={20} /> },
-    { path: "/admin/room", label: "Phòng chiếu", icon: <MonitorPlay size={20} /> },
-    { path: "/admin/showtime", label: "Suất chiếu", icon: <CalendarClock size={20} /> },
-    { path: "/admin/ticket", label: "Vé đặt", icon: <Ticket size={20} /> },
-    { path: "/admin/user", label: "Tài khoản", icon: <Users size={20} /> },
-    { path: "/admin/admin", label: "Báo cáo thống kê", icon: <Users size={20} /> },
-
+    { path: "/admin/room", label: "Quản lý Phòng chiếu", icon: <MonitorPlay size={20} /> },
+    { path: "/admin/showtime", label: "Quản lý Suất chiếu", icon: <CalendarClock size={20} /> },
+    { path: "/admin/ticket", label: "Quản lý Vé đặt", icon: <Ticket size={20} /> },
+    { path: "/admin/order", label: "Quản lý Đơn hàng", icon: <ShoppingBag size={20} /> },
+    { path: "/admin/user", label: "Quản lý Tài khoản", icon: <Users size={20} /> },
   ];
 
   return (
@@ -52,8 +51,8 @@ export default function Sidebar() {
       
       {/* --- HEADER SIDEBAR --- */}
       <div className="h-16 flex items-center justify-center border-b border-gray-800">
-        <Link to="/" className="text-xl font-bold text-yellow-500 flex items-center gap-2">
-           🎬 Cinema Admin
+        <Link to="/" className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-600 tracking-tighter shrink-0">
+          POPCORN<span className="text-white">CINEMA</span>
         </Link>
       </div>
 

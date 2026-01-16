@@ -149,7 +149,7 @@ export default function Movies() {
       await deleteMovie(id);
       alert("✅ Xóa phim thành công!");
       fetchMovies();
-    } catch (err) { alert("Không thể xóa phim!"); }
+    } catch (err) { alert("Không thể xóa phim!",err); }
   };
 
   return (

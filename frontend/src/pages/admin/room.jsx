@@ -132,7 +132,7 @@ export default function Rooms() {
       alert("✅ Xóa phòng chiếu thành công!");
       fetchRooms();
     } catch (err) {
-      alert("❌ Không thể xóa phòng!");
+      alert("❌ Không thể xóa phòng!, " + (err.response?.data?.message || err.message));
     }
   };
 

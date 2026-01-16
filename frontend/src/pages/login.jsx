@@ -29,7 +29,7 @@ const Login = () => {
       alert("Đăng nhập thành công!");
 
       if (data.user.role === "admin" || data.user.role === 1) {
-        navigate("/admin/movie");
+        navigate("/admin/dashboard");
       } else {
         navigate("/");
       }
