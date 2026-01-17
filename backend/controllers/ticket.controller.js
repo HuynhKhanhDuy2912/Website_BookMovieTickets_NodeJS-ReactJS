@@ -54,24 +54,26 @@ exports.getMyTickets = async (req, res) => {
 };
 
 // 3. LẤY TẤT CẢ VÉ (Admin)
+// controllers/ticketController.js
+
 exports.getAllTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find()
-      .populate("user", "name email")
+      .populate("user", "name email") // Lấy tên User
+      .populate("showtime")           // Lấy thông tin suất chiếu
       .populate({
-        path: "showtime",
-        select: "startTime",
-        populate: { path: "movie", select: "title" }
+         path: "showtime",
+         populate: { path: "movie", select: "title" } // Lấy tên phim
       })
-      .populate("order", "orderCode status")
+      // 👇 QUAN TRỌNG: Populate ngược về Order để lấy tổng tiền nếu Ticket không có
+      .populate("order", "totalPrice seats status") 
       .sort({ createdAt: -1 });
 
-    res.status(200).json(tickets);
-  } catch (error) {
-    res.status(500).json({ message: "Error fetching tickets", error: error.message });
+    res.json(tickets);
+  } catch (err) {
+    res.status(500).json({ message: "Lỗi lấy danh sách vé", error: err.message });
   }
 };
-
 // 4. LẤY CHI TIẾT 1 VÉ
 exports.getTicketById = async (req, res) => {
   try {

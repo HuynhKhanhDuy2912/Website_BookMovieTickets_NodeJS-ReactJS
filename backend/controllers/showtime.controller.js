@@ -1,19 +1,21 @@
 const Showtime = require("../models/Showtime");
 
-// Lấy tất cả suất chiếu
+// 1. LẤY TẤT CẢ SUẤT CHIẾU
 exports.getAllShowtimes = async (req, res) => {
   try {
     const showtimes = await Showtime.find()
       .populate("movie", "title duration")
       .populate("cinema", "name city")
-      .populate("room", "name seatCount");
+      // ✅ Lấy vipRows để hiển thị nhanh danh sách nếu cần
+      .populate("room", "name seatCount vipRows"); 
+      
     res.json(showtimes);
   } catch (err) {
     res.status(500).json({ message: "Lỗi khi lấy danh sách suất chiếu", error: err.message });
   }
 };
 
-// Lấy suất chiếu theo ID
+// 2. LẤY SUẤT CHIẾU THEO ID (Chi tiết để đặt vé)
 exports.getShowtimeById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -22,7 +24,8 @@ exports.getShowtimeById = async (req, res) => {
       .populate("cinema")
       .populate({
         path: "room",
-        select: "name seats rows cols" // Quan trọng: lấy seats ra để vẽ ghế
+        // ✅ QUAN TRỌNG: Phải lấy vipRows để Frontend vẽ màu ghế VIP
+        select: "name seats rows cols vipRows seatCount" 
       });
 
     if (!showtime) return res.status(404).json({ message: "Không tìm thấy suất chiếu" });
@@ -33,9 +36,10 @@ exports.getShowtimeById = async (req, res) => {
   }
 };
 
-// Thêm suất chiếu mới
+// 3. TẠO SUẤT CHIẾU MỚI
 exports.createShowtime = async (req, res) => {
   try {
+    // (Optional) Bạn có thể thêm logic kiểm tra trùng giờ chiếu tại đây nếu muốn
     const showtime = await Showtime.create(req.body);
     res.status(201).json({ message: "Thêm suất chiếu thành công", showtime });
   } catch (err) {
@@ -43,7 +47,7 @@ exports.createShowtime = async (req, res) => {
   }
 };
 
-// Cập nhật suất chiếu
+// 4. CẬP NHẬT SUẤT CHIẾU
 exports.updateShowtime = async (req, res) => {
   try {
     const showtime = await Showtime.findByIdAndUpdate(req.params.id, req.body, { new: true })
@@ -58,9 +62,11 @@ exports.updateShowtime = async (req, res) => {
   }
 };
 
-// Xóa suất chiếu
+// 5. XÓA SUẤT CHIẾU
 exports.deleteShowtime = async (req, res) => {
   try {
+    // Lưu ý: Nếu suất chiếu đã có vé đặt, việc xóa này sẽ làm vé bị lỗi tham chiếu.
+    // Tốt nhất nên kiểm tra Ticket trước khi xóa (nhưng ở mức cơ bản thì xóa luôn cũng được).
     const showtime = await Showtime.findByIdAndDelete(req.params.id);
     if (!showtime) return res.status(404).json({ message: "Không tìm thấy suất chiếu" });
     res.json({ message: "Xóa suất chiếu thành công" });
@@ -69,12 +75,12 @@ exports.deleteShowtime = async (req, res) => {
   }
 };
 
-// Lấy suất chiếu theo phim
+// 6. LẤY SUẤT CHIẾU THEO PHIM (Dùng cho trang chi tiết phim)
 exports.getShowtimesByMovie = async (req, res) => {
   try {
     const showtimes = await Showtime.find({ movie: req.params.movieId })
       .populate("cinema", "name city")
-      .populate("room", "name seatCount");
+      .populate("room", "name seatCount vipRows"); // Lấy thêm vipRows để hiển thị sơ qua
 
     res.json(showtimes);
   } catch (err) {
@@ -82,18 +88,19 @@ exports.getShowtimesByMovie = async (req, res) => {
   }
 };
 
+// 7. LẤY SUẤT CHIẾU THEO RẠP (Dùng cho trang chi tiết rạp)
 exports.getShowtimesByCinema = async (req, res) => {
   try {
     const showtimes = await Showtime.find({ 
         cinema: req.params.cinemaId,
-        startTime: { $gte: new Date() } 
+        startTime: { $gte: new Date() } // Chỉ lấy suất chưa chiếu
     })
     .populate("movie", "title duration posterUrl description") 
-    .populate("room", "name seatCount")
+    .populate("room", "name seatCount vipRows")
     .sort({ startTime: 1 });
 
     res.json(showtimes);
   } catch (err) {
-    res.status(500).json({ message: "Lỗi", error: err.message });
+    res.status(500).json({ message: "Lỗi lấy danh sách theo rạp", error: err.message });
   }
 };

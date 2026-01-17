@@ -1,100 +1,183 @@
 import { useEffect, useState } from "react";
-// Giả sử bạn có các API này, nếu chưa hãy tạo thêm trong service
 import { 
   getAllTickets, 
   createTicket, 
   updateTicket, 
   deleteTicket 
 } from "../../api/ticketService";
-import { getAllUsers } from "../../api/userService";       // Import API lấy Users
-import { getAllShowtimes } from "../../api/showtimeService"; // Import API lấy Suất chiếu
+import { getAllUsers } from "../../api/userService";
+import { getAllShowtimes } from "../../api/showtimeService";
 
 import { 
   Loader2, Trash2, SquarePen, Ticket, User, 
-  Calendar, MapPin, CreditCard, Armchair 
+  Calendar, MapPin, CreditCard, Armchair, 
+  UserX, Users, LayoutGrid, Filter, Crown
 } from "lucide-react";
 
 export default function Tickets() {
   const [tickets, setTickets] = useState([]);
-  const [users, setUsers] = useState([]);         // State lưu danh sách Users
-  const [showtimes, setShowtimes] = useState([]); // State lưu danh sách Suất chiếu
+  const [users, setUsers] = useState([]);
+  const [showtimes, setShowtimes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
+  // UX State
+  const [isGuestMode, setIsGuestMode] = useState(true);
+  const [bookedSeats, setBookedSeats] = useState([]);
+  
+  // Cấu hình phụ thu VIP
+  const VIP_SURCHARGE = 10000; // Cộng thêm 10k
+
   // Form State
   const [formData, setFormData] = useState({
-    user: "",       // Sẽ lưu User ID chọn từ Select
-    showtime: "",   // Sẽ lưu Showtime ID chọn từ Select
-    seats: "",      // Chuỗi "A1, A2"
+    user: "",       
+    guestName: "",  
+    showtime: "",   
+    seats: [],      
     totalPrice: 0,
-    paymentStatus: "unpaid",
-    isManual: true, // Flag đánh dấu vé này do Admin tạo
+    paymentStatus: "paid", 
+    isManual: true, 
   });
 
-  // 1. Fetch toàn bộ dữ liệu cần thiết
+  // --- 1. FETCH DATA ---
   useEffect(() => {
-    const fetchAllData = async () => {
-      try {
-        // Dùng Promise.all để gọi song song cho nhanh
-        const [ticketsRes, usersRes, showtimesRes] = await Promise.all([
-          getAllTickets(),
-          getAllUsers(),
-          getAllShowtimes()
-        ]);
-
-        setTickets(ticketsRes.data);
-        setUsers(usersRes.data || []); // API trả về mảng users
-        setShowtimes(showtimesRes.data || []); // API trả về mảng showtimes
-      } catch (err) {
-        console.error("❌ Lỗi tải dữ liệu:", err);
-      }
-    };
-
-    fetchAllData();
+    fetchData();
   }, []);
 
-  // 2. Tự động tính tiền khi thay đổi Ghế hoặc Suất chiếu
-  useEffect(() => {
-    if (!formData.showtime || !formData.seats) return;
-
-    // Tìm suất chiếu đang chọn để lấy giá vé
-    const selectedShowtime = showtimes.find(s => s._id === formData.showtime);
-    if (selectedShowtime) {
-      const seatCount = formData.seats.split(",").filter(s => s.trim()).length;
-      // Giả sử selectedShowtime.price là giá vé gốc
-      const price = selectedShowtime.price || 50000; 
-      
-      setFormData(prev => ({
-        ...prev,
-        totalPrice: seatCount * price
-      }));
+  const fetchData = async () => {
+    try {
+      const [ticketsRes, usersRes, showtimesRes] = await Promise.all([
+        getAllTickets(),
+        getAllUsers(),
+        getAllShowtimes() // API này cần trả về populate room -> vipRows
+      ]);
+      setTickets(ticketsRes.data);
+      setUsers(usersRes.data || []);
+      setShowtimes(showtimesRes.data || []);
+    } catch (err) {
+      console.error("❌ Lỗi tải dữ liệu:", err);
     }
-  }, [formData.showtime, formData.seats, showtimes]);
+  };
+
+  // --- HELPER: Lấy thông tin hàng VIP của suất chiếu đang chọn ---
+  const getVipRows = () => {
+      if (!formData.showtime) return [];
+      const selectedST = showtimes.find(s => s._id === formData.showtime);
+      // Giả sử API showtime đã populate room và room có trường vipRows ["A", "B"]
+      return selectedST?.room?.vipRows || []; 
+  };
+
+  // --- 2. XỬ LÝ KHI CHỌN SUẤT CHIẾU ---
+  useEffect(() => {
+    if (!formData.showtime) {
+        setBookedSeats([]);
+        return;
+    }
+    
+    // Lấy danh sách ghế đã bán
+    const taken = tickets
+        .filter(t => {
+            const tShowtimeId = t.showtime?._id || t.showtime;
+            return tShowtimeId === formData.showtime && t.status !== 'cancelled';
+        })
+        .flatMap(t => {
+            if (t.seatNumber) return [t.seatNumber];
+            if (Array.isArray(t.seats)) return t.seats.map(s => s.name || s);
+            if (t.order?.seats && Array.isArray(t.order.seats)) return t.order.seats.map(s => s.name || s);
+            return [];
+        });
+        
+    setBookedSeats([...new Set(taken)]);
+    
+    if (!editingId) {
+        setFormData(prev => ({ ...prev, seats: [], totalPrice: 0 }));
+    }
+  }, [formData.showtime, tickets]);
+
+  // --- 3. TÍNH TIỀN (CÓ CỘNG VIP) ---
+  useEffect(() => {
+    if (!formData.showtime) return;
+    const selectedShowtime = showtimes.find(s => s._id === formData.showtime);
+    
+    if (selectedShowtime) {
+      const basePrice = selectedShowtime.price || 50000;
+      const vipRows = selectedShowtime.room?.vipRows || []; // Lấy danh sách hàng VIP
+
+      let total = 0;
+      formData.seats.forEach(seatName => {
+          // Lấy ký tự hàng ghế (VD: "D5" -> "D")
+          const rowChar = seatName.charAt(0);
+          
+          // Kiểm tra xem hàng này có phải VIP không
+          const isVip = vipRows.includes(rowChar);
+
+          // Cộng tiền
+          total += basePrice + (isVip ? VIP_SURCHARGE : 0);
+      });
+
+      setFormData(prev => ({ ...prev, totalPrice: total }));
+    }
+  }, [formData.seats, formData.showtime]);
 
 
+  // --- 4. FILTER TICKETS ---
+  const filteredTickets = formData.showtime 
+    ? tickets.filter(t => {
+        const tShowtimeId = t.showtime?._id || t.showtime;
+        return tShowtimeId === formData.showtime;
+      })
+    : tickets;
+
+
+  // --- HANDLERS ---
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const resetForm = () => {
-    setEditingId(null);
-    setFormData({
-      user: "", showtime: "", seats: "", totalPrice: 0, paymentStatus: "unpaid", isManual: true
+  const toggleSeat = (seatName) => {
+    if (bookedSeats.includes(seatName)) return;
+
+    setFormData(prev => {
+        const isSelected = prev.seats.includes(seatName);
+        let newSeats;
+        if (isSelected) {
+            newSeats = prev.seats.filter(s => s !== seatName);
+        } else {
+            newSeats = [...prev.seats, seatName];
+        }
+        return { ...prev, seats: newSeats };
     });
   };
 
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      user: "", guestName: "", showtime: "", seats: [], totalPrice: 0, paymentStatus: "paid", isManual: true
+    });
+    setIsGuestMode(true);
+  };
+
   const handleEdit = (ticket) => {
-    // CHẶN: Nếu không phải vé Admin tạo thì không cho sửa (Logic FE)
-    // Lưu ý: Backend cần có trường isManual hoặc source: 'offline' để check chính xác
-    // Ở đây mình ví dụ: nếu vé có nguồn gốc online (thường user đặt), ta return.
-    
     setEditingId(ticket._id);
+    const hasUser = !!ticket.user;
+    setIsGuestMode(!hasUser);
+    
+    let currentSeats = [];
+    if (Array.isArray(ticket.seats) && ticket.seats.length > 0) {
+        currentSeats = ticket.seats.map(s => s.name || s);
+    } else if (ticket.seatNumber) {
+        currentSeats = [ticket.seatNumber];
+    } else if (ticket.order?.seats) {
+        currentSeats = ticket.order.seats.map(s => s.name || s);
+    }
+
     setFormData({
       user: ticket.user?._id || ticket.user || "",
+      guestName: !hasUser ? (ticket.guestName || "Khách lẻ") : "",
       showtime: ticket.showtime?._id || ticket.showtime || "",
-      seats: Array.isArray(ticket.seats) ? ticket.seats.map(s => s.name || s).join(", ") : "",
-      totalPrice: ticket.totalPrice || 0,
+      seats: currentSeats,
+      totalPrice: ticket.totalPrice || ticket.price || 0,
       paymentStatus: ticket.paymentStatus || "unpaid",
       isManual: true
     });
@@ -105,15 +188,13 @@ export default function Tickets() {
     e.preventDefault();
     setLoading(true);
 
-    // Chuyển chuỗi ghế thành mảng object hoặc string tùy Backend yêu cầu
-    const seatsArray = formData.seats
-      ? formData.seats.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
-
     const payload = {
       ...formData,
-      seats: seatsArray, // Backend cần xử lý mảng này
-      totalPrice: Number(formData.totalPrice),
+      user: isGuestMode ? null : formData.user,
+      guestName: isGuestMode ? formData.guestName : null,
+      seats: formData.seats, 
+      totalPrice: Number(formData.totalPrice), 
+      isManual: true 
     };
 
     try {
@@ -122,12 +203,10 @@ export default function Tickets() {
         alert("✅ Cập nhật vé thành công!");
       } else {
         await createTicket(payload);
-        alert("✅ Tạo vé thành công!");
+        alert("✅ Xuất vé thành công!");
       }
       resetForm();
-      // Reload tickets only
-      const { data } = await getAllTickets();
-      setTickets(data);
+      fetchData(); 
     } catch (err) {
       console.error("Lỗi:", err);
       alert("❌ Lỗi: " + (err.response?.data?.message || err.message));
@@ -137,11 +216,10 @@ export default function Tickets() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Bạn có chắc muốn xóa vé này?")) return;
+    if (!window.confirm("Bạn có chắc muốn hủy vé này?")) return;
     try {
       await deleteTicket(id);
-      const { data } = await getAllTickets();
-      setTickets(data);
+      fetchData();
     } catch (err) {
       alert("❌ Không thể xóa vé!");
     }
@@ -151,236 +229,284 @@ export default function Tickets() {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
   };
 
+  // --- SƠ ĐỒ GHẾ (CÓ HIỂN THỊ VIP) ---
+  const renderSeatMap = () => {
+     if (!formData.showtime) return <div className="text-gray-400 text-sm italic p-4 text-center border rounded bg-gray-50">Vui lòng chọn suất chiếu để xem sơ đồ ghế</div>;
+     
+     // Cố định mẫu 5x8 (Thực tế nên lấy row/col từ selectedShowtime.room.rows/cols)
+     const rows = ['A', 'B', 'C', 'D', 'E']; 
+     const cols = [1, 2, 3, 4, 5, 6, 7, 8];
+
+     // Lấy danh sách hàng VIP của phòng này
+     const currentVipRows = getVipRows();
+
+     return (
+        <div className="mt-4 border p-4 rounded-lg bg-gray-50">
+           <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><LayoutGrid size={16}/> Sơ đồ ghế</h4>
+           
+           <div className="flex flex-col gap-2 items-center">
+              <div className="w-full h-1 bg-gray-400 mb-4 rounded shadow-sm relative"><span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-gray-500 uppercase">Màn hình</span></div>
+              
+              {rows.map(row => {
+                 const isRowVip = currentVipRows.includes(row);
+                 return (
+                    <div key={row} className="flex gap-2 items-center">
+                       {/* Nhãn hàng ghế */}
+                       <span className={`text-xs font-bold w-4 ${isRowVip ? 'text-amber-500' : 'text-gray-400'}`}>{row}</span>
+                       
+                       {cols.map(col => {
+                          const seatName = `${row}${col}`;
+                          const isTaken = bookedSeats.includes(seatName);
+                          const isSelected = formData.seats.includes(seatName);
+                          
+                          return (
+                             <button
+                               key={seatName}
+                               type="button"
+                               onClick={() => toggleSeat(seatName)}
+                               disabled={isTaken}
+                               className={`
+                                  w-8 h-8 text-xs font-bold rounded transition shadow-sm flex items-center justify-center relative group
+                                  ${isTaken 
+                                     ? 'bg-red-200 text-red-400 cursor-not-allowed border border-red-200' 
+                                     : isSelected 
+                                        ? 'bg-amber-600 text-white border border-amber-700 scale-110 z-10' 
+                                        : isRowVip
+                                            ? 'bg-yellow-100 border border-yellow-400 text-yellow-700 hover:bg-yellow-200' // Màu VIP
+                                            : 'bg-white border border-gray-300 hover:border-blue-400 hover:text-blue-500' // Màu Thường
+                                  }
+                               `}
+                               title={isRowVip ? `VIP (+10k)` : 'Standard'}
+                             >
+                                {/* Icon vương miện cho ghế VIP */}
+                                {isRowVip && !isTaken && !isSelected && <Crown size={8} className="absolute -top-1 -right-1 text-yellow-600"/>}
+                                {seatName}
+                             </button>
+                          )
+                       })}
+                    </div>
+                 )
+              })}
+              
+              <div className="flex gap-4 mt-4 text-xs justify-center flex-wrap text-gray-600">
+                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-200 border border-red-200 rounded"></span> Đã bán</div>
+                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-amber-600 rounded"></span> Đang chọn</div>
+                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-400 rounded"></span> VIP (+10k)</div>
+                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-white border border-gray-300 rounded"></span> Thường</div>
+              </div>
+           </div>
+        </div>
+     )
+  };
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-2 flex items-center gap-2">
-        <Ticket className="text-amber-600" /> Quản lý Vé & Đặt Chỗ
+        <Ticket className="text-amber-600" /> Quản lý Vé & Đặt Chỗ (POS)
       </h2>
 
-      {/* FORM TẠO VÉ (Chỉ dành cho Admin tạo vé thủ công tại quầy) */}
-      <div className="bg-white shadow-md rounded-lg p-6 mb-8 border-l-4 border-amber-500">
-        <h3 className="text-lg font-semibold mb-4 text-amber-600 flex items-center gap-2">
-           <SquarePen size={20}/> {editingId ? "Cập nhật Vé (Admin)" : "Bán Vé Tại Quầy (Admin)"}
-        </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          
+          {/* === CỘT TRÁI: FORM BÁN VÉ === */}
+          <div className="lg:col-span-1 bg-white shadow-xl rounded-xl p-6 border-t-4 border-amber-500 sticky top-4">
+             <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
+                <SquarePen size={20} className="text-amber-600"/> 
+                {editingId ? "Cập nhật Vé" : "Bán Vé Tại Quầy"}
+             </h3>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 1. SELECT USER */}
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Khách hàng</label>
-               <select
-                 name="user"
-                 value={formData.user}
-                 onChange={handleChange}
-                 className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none bg-white"
-                 disabled={!!editingId}
-               >
-                 <option value="">-- Chọn khách hàng --</option>
-                 {users.map(u => (
-                   <option key={u._id} value={u._id}>
-                     {u.name} ({u.email})
-                   </option>
-                 ))}
-               </select>
-            </div>
-
-            {/* 2. SELECT SHOWTIME */}
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Suất chiếu</label>
-               <select
-                 name="showtime"
-                 value={formData.showtime}
-                 onChange={handleChange}
-                 className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none bg-white"
-                 disabled={!!editingId}
-               >
-                 <option value="">-- Chọn suất chiếu --</option>
-                 {showtimes.map(s => (
-                   <option key={s._id} value={s._id}>
-                     {s.movie?.title} - {new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} ({s.room?.name})
-                   </option>
-                 ))}
-               </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-             {/* 3. INPUT SEATS */}
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ghế (VD: A1, A2)</label>
-                <input
-                  name="seats"
-                  value={formData.seats}
-                  onChange={handleChange}
-                  placeholder="Nhập số ghế..."
-                  className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none"
-                />
-             </div>
-             
-             {/* 4. TOTAL PRICE (Auto calculated) */}
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tổng tiền (Tự động)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    name="totalPrice"
-                    value={formData.totalPrice}
-                    readOnly // Chỉ đọc, tự động tính
-                    className="border p-2.5 w-full rounded bg-gray-100 font-bold text-gray-700 outline-none"
-                  />
-                  <span className="absolute right-3 top-2.5 text-gray-500 text-sm">VNĐ</span>
+             <form onSubmit={handleSubmit} className="space-y-4">
+                
+                {/* BƯỚC 1: CHỌN SUẤT CHIẾU */}
+                <div>
+                   <label className="block text-sm font-bold text-gray-700 mb-1">Bước 1: Chọn Suất chiếu</label>
+                   <select
+                     name="showtime"
+                     value={formData.showtime}
+                     onChange={handleChange}
+                     className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none bg-gray-50 font-medium"
+                     disabled={!!editingId}
+                   >
+                     <option value="">-- Chọn phim & giờ --</option>
+                     {showtimes.map(s => {
+                         const isExpired = new Date() > new Date(s.startTime);
+                         return (
+                            <option key={s._id} value={s._id} disabled={isExpired} className={isExpired ? "text-gray-400" : ""}>
+                              {s.movie?.title || "Phim ???"} - {s.startTime ? new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "Giờ ?"} ({s.room?.name})
+                            </option>
+                         )
+                     })}
+                   </select>
                 </div>
+
+                {/* BƯỚC 2: CHỌN GHẾ (CÓ VIP) */}
+                <div>
+                   <label className="block text-sm font-bold text-gray-700 mb-1">Bước 2: Chọn Ghế</label>
+                   {renderSeatMap()}
+                   <div className="mt-2 text-right text-sm text-gray-500">
+                      Đang chọn: <span className="font-bold text-amber-600">{formData.seats.length > 0 ? formData.seats.join(", ") : "Chưa có"}</span>
+                   </div>
+                </div>
+
+                {/* BƯỚC 3: KHÁCH HÀNG */}
+                <div>
+                   <div className="flex justify-between items-center mb-1">
+                      <label className="block text-sm font-bold text-gray-700">Bước 3: Khách hàng</label>
+                      <button 
+                        type="button" 
+                        onClick={() => setIsGuestMode(!isGuestMode)}
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                         {isGuestMode ? <><Users size={12}/> Chọn thành viên?</> : <><UserX size={12}/> Khách vãng lai?</>}
+                      </button>
+                   </div>
+                   
+                   {isGuestMode ? (
+                      <input
+                        name="guestName"
+                        value={formData.guestName}
+                        onChange={handleChange}
+                        placeholder="Nhập tên khách (VD: Anh Tuấn)..."
+                        className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none"
+                        required={isGuestMode}
+                      />
+                   ) : (
+                      <select
+                        name="user"
+                        value={formData.user}
+                        onChange={handleChange}
+                        className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none bg-white"
+                        required={!isGuestMode}
+                      >
+                        <option value="">-- Chọn thành viên --</option>
+                        {users.map(u => (
+                          <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+                        ))}
+                      </select>
+                   )}
+                </div>
+
+                {/* BƯỚC 4: THANH TOÁN */}
+                <div className="bg-amber-50 p-4 rounded border border-amber-100">
+                   <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm text-gray-600">Tổng tiền:</span>
+                      <span className="text-xl font-bold text-amber-700">{formatCurrency(formData.totalPrice)}</span>
+                   </div>
+                   <select
+                      name="paymentStatus"
+                      value={formData.paymentStatus}
+                      onChange={handleChange}
+                      className="w-full border p-2 rounded text-sm bg-white"
+                   >
+                      <option value="paid">Đã thanh toán (Tiền mặt/CK)</option>
+                      <option value="unpaid">Chưa thanh toán (Giữ vé)</option>
+                   </select>
+                </div>
+
+                <div className="flex gap-2">
+                   <button
+                     type="submit"
+                     disabled={loading || !formData.showtime || formData.seats.length === 0}
+                     className="flex-1 bg-amber-600 hover:bg-amber-700 text-white p-3 rounded font-bold shadow-lg shadow-amber-600/30 transition disabled:bg-gray-300 disabled:shadow-none flex justify-center items-center gap-2"
+                   >
+                     {loading ? <Loader2 className="animate-spin"/> : <Ticket/>} 
+                     {editingId ? "Lưu Vé" : "Xuất Vé"}
+                   </button>
+                   {editingId && (
+                     <button type="button" onClick={resetForm} className="px-4 bg-gray-200 hover:bg-gray-300 rounded font-bold text-gray-600">Hủy</button>
+                   )}
+                </div>
+
+             </form>
+          </div>
+
+          {/* === CỘT PHẢI: LỊCH SỬ VÉ === */}
+          <div className="lg:col-span-2">
+             <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-gray-800">Lịch sử bán vé</h3>
+                    {formData.showtime ? (
+                        <span className="flex items-center gap-1 bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded font-bold border border-amber-200">
+                            <Filter size={12}/> Lọc theo suất
+                        </span>
+                    ) : (
+                        <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded">Tất cả</span>
+                    )}
+                </div>
+                <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold">{filteredTickets.length} vé</span>
              </div>
 
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Thanh toán</label>
-                <select
-                  name="paymentStatus"
-                  value={formData.paymentStatus}
-                  onChange={handleChange}
-                  className="border p-2.5 w-full rounded focus:ring-2 focus:ring-amber-400 outline-none bg-white"
-                >
-                  <option value="unpaid">Chưa thanh toán</option>
-                  <option value="paid">Đã thanh toán</option>
-                </select>
-             </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={loading || !formData.user || !formData.showtime}
-              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white p-2.5 rounded shadow-sm font-medium flex justify-center items-center gap-2 transition disabled:bg-gray-300"
-            >
-              {loading && <Loader2 className="animate-spin" size={20} />}
-              {editingId ? "Lưu thay đổi" : "Xuất Vé Ngay"}
-            </button>
-            {editingId && (
-              <button
-                type="button"
-                className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-medium transition"
-                onClick={resetForm}
-              >
-                Hủy
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-
-      {/* DANH SÁCH VÉ */}
-      <div>
-        <h3 className="text-xl font-bold mb-4 text-gray-800">Lịch sử Đặt Vé ({tickets.length})</h3>
-        
-        {tickets.length === 0 ? (
-          <div className="text-center py-10 bg-gray-50 rounded border border-dashed border-gray-300">
-            <Ticket className="mx-auto text-gray-300 mb-2" size={48} />
-            <p className="text-gray-500">Chưa có dữ liệu vé.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {tickets.map((ticket) => {
-              // LOGIC QUAN TRỌNG: Kiểm tra xem vé này có được phép sửa/xóa không?
-              // Nếu Backend không có trường 'source', bạn có thể dựa vào paymentStatus (ví dụ 'paid' online thì không sửa)
-              // Hoặc thêm trường 'isManual' vào schema.
-              // Ở đây mình giả định: Vé nào có seats dạng string là admin nhập tay, còn User đặt là Array Object (tùy DB của bạn)
-              // Cách tốt nhất: Backend trả về field `canEdit: true/false`.
-              
-              const isClientBooking = !ticket.isManual; // Ví dụ: Giả định DB có trường này
-              // Nếu không có trường isManual, bạn có thể tạm thời cho phép xóa nhưng cảnh báo.
-
-              return (
-                <div
-                  key={ticket._id}
-                  className={`bg-white border rounded-lg shadow-sm hover:shadow-md transition flex flex-col md:flex-row gap-4 items-stretch overflow-hidden ${isClientBooking ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-amber-500'}`}
-                >
-                  {/* Cột trái: Status */}
-                  <div className="hidden md:flex flex-col items-center justify-center w-24 bg-gray-50 text-center p-2 border-r">
-                     <span className="text-xs font-bold text-gray-400 uppercase mb-1">
-                        {isClientBooking ? "Online" : "Tại quầy"}
-                     </span>
-                     <div className={`p-2 rounded-full mb-1 ${ticket.paymentStatus === 'paid' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-500'}`}>
-                        {ticket.paymentStatus === 'paid' ? <CreditCard size={20}/> : <Loader2 size={20}/>}
-                     </div>
-                     <span className={`text-[10px] font-bold uppercase ${ticket.paymentStatus === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
-                       {ticket.paymentStatus}
-                     </span>
-                  </div>
-
-                  {/* Thông tin chính */}
-                  <div className="flex-1 py-4 px-2 md:px-0 flex flex-col justify-center">
-                    <div className="flex justify-between items-start mb-1 pr-4">
-                      <h4 className="font-bold text-lg text-gray-900 leading-tight">
-                        {ticket.showtime?.movie?.title || "Phim không xác định"}
-                      </h4>
-                      <p className="font-bold text-amber-600 text-lg whitespace-nowrap ml-2">
-                        {formatCurrency(ticket.totalPrice)}
+             <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
+                {filteredTickets.length === 0 ? (
+                   <div className="text-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                      <Ticket className="mx-auto text-gray-300 mb-2" size={48} />
+                      <p className="text-gray-500">
+                         {formData.showtime ? "Chưa có vé nào cho suất chiếu này." : "Chưa có giao dịch nào."}
                       </p>
-                    </div>
+                   </div>
+                ) : (
+                   filteredTickets.map((ticket) => {
+                      const isClientBooking = !ticket.isManual;
+                      const finalPrice = ticket.totalPrice || ticket.price || ticket.order?.totalPrice || 0;
 
-                    <div className="text-sm text-gray-600 space-y-1 mb-3">
-                       <div className="flex items-center gap-2">
-                          <User size={14} className="text-blue-500"/> 
-                          <span className="font-medium text-gray-800">
-                            {ticket.user?.name || ticket.user?.email || "Khách vãng lai"}
-                          </span>
-                       </div>
-                       <div className="flex items-center gap-4">
-                          <span className="flex items-center gap-1">
-                             <Calendar size={14}/> 
-                             {ticket.showtime?.startTime ? new Date(ticket.showtime.startTime).toLocaleString('vi-VN') : "N/A"}
-                          </span>
-                          <span className="flex items-center gap-1">
-                             <MapPin size={14}/> 
-                             {ticket.showtime?.room?.name}
-                          </span>
-                       </div>
-                    </div>
+                      let seatDisplay = "Chưa chọn";
+                      if (ticket.seats && ticket.seats.length > 0) {
+                          if (Array.isArray(ticket.seats)) {
+                              seatDisplay = ticket.seats.map(s => s.name || s).join(", ");
+                          } else {
+                              seatDisplay = ticket.seats;
+                          }
+                      } else if (ticket.seatNumber) {
+                          seatDisplay = ticket.seatNumber;
+                      } else if (ticket.order?.seats) {
+                          seatDisplay = ticket.order.seats.map(s => s.name || s).join(", ");
+                      }
 
-                    {/* Ghế ngồi */}
-                    <div className="flex items-center gap-2 bg-gray-50 p-2 rounded max-w-max">
-                       <Armchair size={16} className="text-gray-400"/>
-                       <span className="text-sm font-bold text-gray-800">
-                         {Array.isArray(ticket.seats) 
-                            ? ticket.seats.map(s => s.name || s).join(", ") // Xử lý nếu seats là mảng object hoặc mảng string
-                            : ticket.seats || "Chưa chọn ghế"
-                         }
-                       </span>
-                    </div>
-                  </div>
+                      return (
+                         <div key={ticket._id} className="bg-white border rounded-lg p-4 flex gap-4 items-center shadow-sm hover:shadow-md transition group">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${ticket.paymentStatus === 'paid' || ticket.order?.status === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-500'}`}>
+                               {ticket.paymentStatus === 'paid' || ticket.order?.status === 'success' ? <CreditCard size={20}/> : <Loader2 size={20}/>}
+                            </div>
 
-                  {/* Actions - Chỉ hiện cho vé Admin tạo hoặc có quyền */}
-                  {!isClientBooking && (
-                    <div className="flex md:flex-col border-t md:border-t-0 md:border-l w-full md:w-20 divide-x md:divide-x-0 md:divide-y bg-gray-50">
-                      <button
-                        onClick={() => handleEdit(ticket)}
-                        className="flex-1 flex items-center justify-center text-amber-600 hover:bg-amber-100 p-3 transition"
-                        title="Sửa vé này"
-                      >
-                        <SquarePen size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(ticket._id)}
-                        className="flex-1 flex items-center justify-center text-red-600 hover:bg-red-100 p-3 transition"
-                        title="Xóa vé này"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                  
-                  {/* Nếu là vé Online thì hiện label read-only */}
-                  {isClientBooking && (
-                    <div className="flex md:flex-col border-t md:border-t-0 md:border-l w-full md:w-20 items-center justify-center bg-gray-50 text-gray-400 text-xs text-center p-2">
-                       <span className="hidden md:block">Client Booking</span>
-                       <span className="md:hidden">Vé Online (Không thể sửa)</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                            <div className="flex-1 min-w-0">
+                               <div className="flex justify-between items-start">
+                                  <h4 className="font-bold text-gray-800 truncate" title={ticket.showtime?.movie?.title}>
+                                    {ticket.showtime?.movie?.title || "Phim không xác định"}
+                                  </h4>
+                                  <span className="font-bold text-amber-600 whitespace-nowrap ml-2">
+                                     {formatCurrency(finalPrice)}
+                                  </span>
+                               </div>
+                               
+                               <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                                  <span className="flex items-center gap-1">
+                                     {isClientBooking ? <Users size={14} className="text-blue-500"/> : <UserX size={14} className="text-gray-500"/>}
+                                     {ticket.user?.name || ticket.guestName || "Khách vãng lai"}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                     <Calendar size={14}/> 
+                                     {ticket.showtime?.startTime ? new Date(ticket.showtime.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "--:--"}
+                                  </span>
+                                  <span className="flex items-center gap-1 text-gray-800 font-medium bg-gray-100 px-2 rounded">
+                                     <Armchair size={14}/> {seatDisplay}
+                                  </span>
+                               </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                               {!isClientBooking && (
+                                  <>
+                                    <button onClick={() => handleEdit(ticket)} className="p-2 text-amber-600 hover:bg-amber-50 rounded"><SquarePen size={16}/></button>
+                                    <button onClick={() => handleDelete(ticket._id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                  </>
+                               )}
+                               {isClientBooking && <span className="text-[10px] text-blue-500 font-bold uppercase border border-blue-200 px-1 rounded bg-blue-50">Online</span>}
+                            </div>
+                         </div>
+                      )
+                   })
+                )}
+             </div>
           </div>
-        )}
       </div>
     </div>
   );
