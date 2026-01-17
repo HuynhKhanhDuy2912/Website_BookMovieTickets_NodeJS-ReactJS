@@ -48,19 +48,6 @@ export default function Header() {
           <Link to="/articles" className="hover:text-yellow-400 transition">Tin Tức</Link>
           <Link to="/profile" className="hover:text-yellow-400 transition">Vé của tôi</Link>
         </nav>
-
-        {/* --- SEARCH BAR --- */}
-        <form onSubmit={handleSearch} className="hidden sm:flex flex-1 max-w-md relative mx-4">
-          <input
-            type="text"
-            placeholder="Tìm tên phim..."
-            className="w-full bg-gray-800 text-sm text-white px-4 py-2 rounded-full border border-gray-700 focus:outline-none focus:border-yellow-500 transition pl-10"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-          <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-        </form>
-
         {/* --- USER ACTIONS --- */}
         <div className="flex items-center gap-3 shrink-0">
           {user ? (
