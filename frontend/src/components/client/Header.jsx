@@ -47,6 +47,8 @@ export default function Header() {
           <Link to="/cinemas" className="hover:text-yellow-400 transition">Rạp Chiếu</Link>
           <Link to="/articles" className="hover:text-yellow-400 transition">Tin Tức</Link>
           <Link to="/profile" className="hover:text-yellow-400 transition">Vé của tôi</Link>
+          <Link to="/profile" className="hover:text-yellow-400 transition">Liên hệ</Link>
+
         </nav>
         {/* --- USER ACTIONS --- */}
         <div className="flex items-center gap-3 shrink-0">
