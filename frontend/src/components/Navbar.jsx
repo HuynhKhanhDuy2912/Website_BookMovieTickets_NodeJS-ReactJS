@@ -60,6 +60,7 @@ export default function Navbar() {
             <Link to="/admin/showtime" className="hover:text-yellow-300 transition">Suất chiếu</Link>
             <Link to="/admin/ticket" className="hover:text-yellow-300 transition">Vé</Link>
             <Link to="/admin/user" className="hover:text-yellow-300 transition">Tài khoản</Link>
+            <Link to="/admin/adminChat" className="hover:text-yellow-300 transition">Liên hệ</Link>
           </div>
         )}
       </div>

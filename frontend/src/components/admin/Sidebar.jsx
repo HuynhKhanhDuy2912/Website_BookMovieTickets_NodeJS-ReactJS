@@ -44,6 +44,8 @@ export default function Sidebar() {
     { path: "/admin/ticket", label: "Quản lý Vé đặt", icon: <Ticket size={20} /> },
     { path: "/admin/order", label: "Quản lý Đơn hàng", icon: <ShoppingBag size={20} /> },
     { path: "/admin/user", label: "Quản lý Tài khoản", icon: <Users size={20} /> },
+    { path: "/admin/adminChat", label: "Quản lý Liên hệ", icon: <Users size={20} /> },
+
   ];
 
   return (

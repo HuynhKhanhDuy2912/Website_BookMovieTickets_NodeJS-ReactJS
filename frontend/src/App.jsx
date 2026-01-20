@@ -22,6 +22,7 @@ import CheckoutPage from "./pages/client/CheckoutPage";
 import BookingSuccessPage from "./pages/client/BookingSuccessPage";
 import ProfilePage from "./pages/client/ProfilePage";
 import CinemaDetailPage from "./pages/client/CinemaDetailPage";
+import ContactPage from "./pages/client/ContactPage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -33,6 +34,7 @@ import Showtime from "./pages/admin/showtime";
 import Ticket from "./pages/admin/Tickets";
 import User from "./pages/admin/user";
 import Dashboard from "./pages/admin/dashboard";
+import AdminChat from "./pages/admin/AdminChat";
 // Client Pages (Ví dụ - bạn sẽ tạo sau)
 // import HomePage from "./pages/client/HomePage";
 // import MovieDetail from "./pages/client/MovieDetail";
@@ -73,9 +75,9 @@ function App() {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/booking/success" element={<BookingSuccessPage />} />
           <Route element={<ProtectedRoute allowedRoles={['user', 'staff', 'admin']} />}>
-            {/* <Route path="/booking/:id" element={<div className="p-10">Trang Đặt Vé</div>} /> */}
-            <Route path="/profile" element={<ProfilePage/>} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
+          <Route path="/contact" element={<ContactPage />} />
         </Route>
 
 
@@ -101,6 +103,7 @@ function App() {
             <Route path="showtime" element={<Showtime />} />
             <Route path="ticket" element={<Ticket />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="adminChat" element={<AdminChat />} />
           </Route>
         </Route>
 

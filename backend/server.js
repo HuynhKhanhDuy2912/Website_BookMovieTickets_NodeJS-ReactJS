@@ -2,6 +2,8 @@ const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const connectDB = require("./config/db");
+const http = require("http");
+const {Server} = require("socket.io");
 
 dotenv.config();
 connectDB();
@@ -24,10 +26,57 @@ app.use("/api/user", require("./routes/user.route"));
 app.use("/api/review", require("./routes/review.route"));
 app.use('/api/admin', require("./routes/index"));
 
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+  },
+})
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running on port ${PORT}`));
+let activeUsers = [];
 
-app.get('/api/hello', (req, res) => {
-  res.json({ message: '✅ Kết nối React ↔ Node.js thành công!' });
+io.on("connection", (socket) => {
+  socket.on("register_user", (username) => {
+    const existingUser = activeUsers.find((u) => u.socketId === socket.id);
+    if (!existingUser) {
+      activeUsers.push({ socketId: socket.id, username, role: "client" });
+    }
+    io.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
+    console.log("User Registered:", username);
+  });
+  socket.on("register_admin", () => {
+    socket.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
+  });
+  socket.on("send_to_admin", (data) => {
+    io.emit("receive_from_client", {
+        ...data,
+        senderId: socket.id, 
+    });
+  });
+  socket.on("send_to_client", ({ toSocketId, message, time }) => {
+    console.log(`Admin reply to ${toSocketId}: ${message}`);
+    io.to(toSocketId).emit("receive_from_admin", {
+        message,
+        time,
+        sender: "ADMIN"
+    });
+  });
+  socket.on("disconnect", () => {
+    activeUsers = activeUsers.filter((u) => u.socketId !== socket.id);
+    io.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
+    console.log("User disconnected:", socket.id);
+  });
+  console.log(`User connected: ${socket.id}`);
+  socket.on("send_message", (data) => {
+    console.log("Message received:", data);
+    io.emit("receive_message", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected", socket.id);
+  });
 });
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running on port ${PORT}`));
+
