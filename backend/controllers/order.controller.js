@@ -1,16 +1,15 @@
 const Order = require("../models/Order");
 const Ticket = require("../models/Ticket");
 const Showtime = require("../models/Showtime");
-const Combo = require("../models/Combo"); // Import thêm Combo Model để tính tiền
+const Combo = require("../models/Combo");
 
-// --- 1. TẠO ĐƠN HÀNG MỚI (BẢO MẬT CAO) ---
+// --- 1. TẠO ĐƠN HÀNG MỚI (BẢO MẬT CAO + REAL-TIME) ---
 exports.createOrder = async (req, res) => {
   try {
     // ⚠️ CHÚ Ý: KHÔNG LẤY 'total' TỪ BODY ĐỂ TRÁNH HACKER SỬA GIÁ
     const { showtimeId, seats, combos, paymentMethod } = req.body;
     
     // Lấy User ID từ Token (An toàn hơn lấy từ body)
-    // Giả sử middleware auth đã gán req.user
     const userId = req.user ? req.user._id : req.body.userId; 
 
     // A. LẤY THÔNG TIN SHOWTIME & KIỂM TRA THỜI GIAN
@@ -19,7 +18,7 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
     }
 
-    // ⛔ SECURITY: Chặn đặt vé suất đã chiếu (Layer 2 Protection)
+    // ⛔ SECURITY: Chặn đặt vé suất đã chiếu
     const now = new Date();
     const startTime = new Date(showtimeData.startTime);
     if (now >= startTime) {
@@ -38,32 +37,32 @@ exports.createOrder = async (req, res) => {
         message: `Ghế ${takenSeats} đã vừa có người khác nhanh tay đặt trước. Vui lòng chọn ghế khác!` 
       });
     }
+    
     if (!showtimeData.price) {
         return res.status(500).json({ 
             message: "Lỗi hệ thống: Suất chiếu này chưa được cấu hình giá vé. Vui lòng liên hệ Admin!" 
         });
     }
-    // C. TÍNH TIỀN TẠI SERVER (SERVER-SIDE CALCULATION)
+
+    // C. TÍNH TIỀN TẠI SERVER
     // 1. Tính tiền Vé
-    const ticketPrice = showtimeData.price; // Giá mặc định nếu thiếu
+    const ticketPrice = showtimeData.price; 
     let calculatedTotal = ticketPrice * seats.length;
 
-    // 2. Tính tiền Combo (Phải tra cứu giá gốc từ DB)
+    // 2. Tính tiền Combo
     const processedCombos = [];
     if (combos && combos.length > 0) {
       for (const item of combos) {
          const comboDb = await Combo.findById(item.comboId || item._id);
          if (comboDb) {
             const qty = item.quantity || 1;
-            // Cộng dồn tiền
             calculatedTotal += comboDb.price * qty;
             
-            // Lưu lại thông tin combo chuẩn để nhét vào Order
             processedCombos.push({
                comboId: comboDb._id,
                name: comboDb.name,
                quantity: qty,
-               price: comboDb.price // Lưu giá tại thời điểm mua
+               price: comboDb.price 
             });
          }
       }
@@ -72,13 +71,13 @@ exports.createOrder = async (req, res) => {
     // D. TẠO MÃ ĐƠN HÀNG
     const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    // E. LƯU ORDER (Với giá tiền do Server tính)
+    // E. LƯU ORDER
     const newOrder = await Order.create({
       user: userId,
       showtime: showtimeId,
       orderCode: orderCode,
       seats: seats,             
-      totalPrice: calculatedTotal, // ✅ AN TOÀN: Dùng giá server tính
+      totalPrice: calculatedTotal,
       paymentMethod: paymentMethod || "Cash",
       status: "success",        
       combos: processedCombos
@@ -97,6 +96,15 @@ exports.createOrder = async (req, res) => {
 
     await Ticket.insertMany(tickets);
 
+    // 🔥 [SOCKET UPDATE]: Báo cho tất cả client khác biết ghế này ĐÃ BÁN
+    if (req.io) {
+        seats.forEach(seatLabel => {
+            // Gửi sự kiện 'seat_sold' tới phòng 'showtimeId'
+            req.io.to(showtimeId).emit("seat_sold", seatLabel);
+        });
+        console.log(`📡 Socket: Đã báo bán ghế ${seats} cho phòng ${showtimeId}`);
+    }
+
     res.status(201).json({ message: "Đặt vé thành công", order: newOrder });
 
   } catch (err) {
@@ -105,10 +113,10 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// --- 2. LẤY ĐƠN HÀNG CỦA TÔI (PROFILE) ---
+// --- 2. LẤY ĐƠN HÀNG CỦA TÔI ---
 exports.getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id }) // Dùng req.user._id chuẩn xác hơn req.user.id
+    const orders = await Order.find({ user: req.user._id }) 
       .populate({
         path: "showtime",
         populate: [
@@ -154,14 +162,32 @@ exports.updateOrder = async (req, res) => {
   }
 };
 
-// --- 5. XÓA ĐƠN (ADMIN) ---
+// --- 5. XÓA ĐƠN (ADMIN) + SOCKET NHẢ GHẾ ---
 exports.deleteOrder = async (req, res) => {
   try {
-    const order = await Order.findByIdAndDelete(req.params.id);
+    // 1. Tìm đơn hàng trước để lấy thông tin showtime và seats
+    const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+
+    const showtimeId = order.showtime.toString(); // Lấy ID phòng để emit socket
     
-    // Xóa luôn Ticket liên quan để nhả ghế ra
+    // 2. Tìm các vé liên quan để lấy danh sách ghế cần nhả
+    const tickets = await Ticket.find({ order: req.params.id });
+    const releasedSeats = tickets.map(t => t.seatNumber);
+
+    // 3. Xóa Order
+    await Order.findByIdAndDelete(req.params.id);
+    
+    // 4. Xóa Tickets
     await Ticket.deleteMany({ order: req.params.id });
+
+    // 🔥 [SOCKET UPDATE]: Báo cho client biết ghế đã được NHẢ RA (Trống lại)
+    if (req.io && releasedSeats.length > 0) {
+        releasedSeats.forEach(seatLabel => {
+            req.io.to(showtimeId).emit("seat_released", seatLabel);
+        });
+        console.log(`📡 Socket: Đã nhả ghế ${releasedSeats} cho phòng ${showtimeId}`);
+    }
 
     res.json({ message: "Xóa đơn hàng và vé liên quan thành công" });
   } catch (err) {

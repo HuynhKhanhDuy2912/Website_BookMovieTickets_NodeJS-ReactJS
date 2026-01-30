@@ -3,31 +3,39 @@ const Showtime = require("../models/Showtime");
 const User = require("../models/User");
 
 // 1. TẠO VÉ MỚI (Dùng cho Admin hoặc test lẻ)
-// Lưu ý: Hệ thống chính dùng orderController.createOrder, hàm này để backup hoặc admin tạo vé lẻ
+// Lưu ý: Nếu hệ thống đặt vé chính nằm ở orderController, bạn nhớ copy logic req.io sang bên đó nữa nhé!
 exports.createTicket = async (req, res) => {
   try {
     const { user, showtime, seatNumber, price, status } = req.body;
 
-    // Kiểm tra showtime và user
+    // Kiểm tra showtime
     const foundShowtime = await Showtime.findById(showtime);
     if (!foundShowtime) return res.status(404).json({ message: "Showtime not found" });
 
-    // Kiểm tra ghế trùng
+    // Kiểm tra ghế trùng (Trong DB)
     const existingTicket = await Ticket.findOne({ showtime, seatNumber, status: "booked" });
     if (existingTicket) return res.status(400).json({ message: "Seat already taken" });
 
     const ticket = new Ticket({
       user,
       showtime,
-      seatNumber, // <--- Dùng seatNumber (String) thay vì seats (Array)
+      seatNumber, 
       price,
       status: status || "booked"
     });
 
     await ticket.save();
 
+    // 🔥 [SOCKET REAL-TIME]: Báo cho tất cả client trong phòng 'showtime' biết ghế này đã bán
+    if (req.io) {
+        // Sự kiện 'seat_sold' sẽ làm ghế chuyển sang màu Xám trên Frontend
+        req.io.to(showtime).emit("seat_sold", seatNumber);
+        console.log(`📡 Socket emitted: seat_sold ${seatNumber} for showtime ${showtime}`);
+    }
+
     res.status(201).json({ message: "Ticket created successfully", ticket });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Error creating ticket", error: error.message });
   }
 };
@@ -54,18 +62,15 @@ exports.getMyTickets = async (req, res) => {
 };
 
 // 3. LẤY TẤT CẢ VÉ (Admin)
-// controllers/ticketController.js
-
 exports.getAllTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find()
-      .populate("user", "name email") // Lấy tên User
-      .populate("showtime")           // Lấy thông tin suất chiếu
+      .populate("user", "name email") 
+      .populate("showtime")           
       .populate({
          path: "showtime",
-         populate: { path: "movie", select: "title" } // Lấy tên phim
+         populate: { path: "movie", select: "title" } 
       })
-      // 👇 QUAN TRỌNG: Populate ngược về Order để lấy tổng tiền nếu Ticket không có
       .populate("order", "totalPrice seats status") 
       .sort({ createdAt: -1 });
 
@@ -74,6 +79,7 @@ exports.getAllTickets = async (req, res) => {
     res.status(500).json({ message: "Lỗi lấy danh sách vé", error: err.message });
   }
 };
+
 // 4. LẤY CHI TIẾT 1 VÉ
 exports.getTicketById = async (req, res) => {
   try {
@@ -109,22 +115,31 @@ exports.updateTicket = async (req, res) => {
   }
 };
 
-// 6. XÓA VÉ
+// 6. XÓA VÉ (Admin xóa vé -> Ghế phải trống lại)
 exports.deleteTicket = async (req, res) => {
   try {
     const ticket = await Ticket.findByIdAndDelete(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+
+    // 🔥 [SOCKET REAL-TIME]: Admin xóa vé -> Báo ghế này đã trống (seat_released)
+    // Để frontend cập nhật lại màu trắng (hoặc bỏ màu xám)
+    if (req.io) {
+        // Cần toString() showtime ID để room socket nhận diện đúng
+        const showtimeId = ticket.showtime.toString(); 
+        req.io.to(showtimeId).emit("seat_released", ticket.seatNumber);
+        console.log(`📡 Socket emitted: seat_released ${ticket.seatNumber} (Ticket Deleted)`);
+    }
+
     res.status(200).json({ message: "Ticket deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting ticket", error: error.message });
   }
 };
 
-// 7. LẤY DANH SÁCH GHẾ ĐÃ BÁN (QUAN TRỌNG NHẤT CHO FRONTEND)
+// 7. LẤY DANH SÁCH GHẾ ĐÃ BÁN
 exports.getTicketsByShowtime = async (req, res) => {
   try {
     const { showtimeId } = req.params;
-    // Lấy tất cả vé đã đặt thành công
     const tickets = await Ticket.find({ 
       showtime: showtimeId,
       status: { $in: ["booked", "sold", "active"] } 
