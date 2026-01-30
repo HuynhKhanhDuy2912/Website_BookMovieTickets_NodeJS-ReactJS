@@ -38,7 +38,7 @@ app.use("/api/combo", require("./routes/combo.route"));
 app.use("/api/order", require("./routes/order.route"));
 app.use("/api/room", require("./routes/room.route"));
 app.use("/api/showtime", require("./routes/showtime.route"));
-app.use("/api/ticket", require("./routes/ticket.route")); // API vé (có dùng req.io)
+app.use("/api/ticket", require("./routes/ticket.route"));
 app.use("/api/upload", require("./routes/upload.route"));
 app.use("/api/user", require("./routes/user.route"));
 app.use("/api/review", require("./routes/review.route"));
@@ -46,11 +46,12 @@ app.use('/api/admin', require("./routes/index"));
 app.use("/api/contact", require("./routes/contact.route"));
 app.use("/api/chat", require("./routes/chat.route"));
 
-// --- GLOBAL VARIABLES ---
+// --- GLOBAL VARIABLES & CONSTANTS ---
+const HOLD_DURATION = 5 * 60 * 1000; // 5 Phút (Tính bằng ms) - QUAN TRỌNG!
 let activeUsers = [];   // Danh sách user online (Chat)
 let seatHoldMap = {};   // Danh sách ghế đang giữ (Booking)
 
-// --- SOCKET CONNECTION LOGIC (GỘP CHUNG) ---
+// --- SOCKET CONNECTION LOGIC ---
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
@@ -64,7 +65,7 @@ io.on("connection", (socket) => {
     console.log(`Socket ${socket.id} joined Chat Room: ${conversationId}`);
   });
 
-  // 1.2. User Login (Báo danh Online)
+  // 1.2. User Login
   socket.on("register_user", (data) => {
     const { username, conversationId } = data;
     const existingUser = activeUsers.find((u) => u.socketId === socket.id);
@@ -72,7 +73,7 @@ io.on("connection", (socket) => {
       activeUsers.push({
         socketId: socket.id,
         username,
-        conversationId, 
+        conversationId,
         role: "client"
       });
     }
@@ -130,66 +131,83 @@ io.on("connection", (socket) => {
 
 
   // ==========================
-  // PHẦN 2: BOOKING SYSTEM
+  // PHẦN 2: BOOKING SYSTEM (REAL-TIME + TIMER)
   // ==========================
 
   // 2.1. Join Room Suất Chiếu
   socket.on("join_showtime", ({ showtimeId, userId }) => {
-    socket.join(showtimeId); // Join vào room của suất chiếu đó
-
-    // Lấy danh sách ghế đang giữ trong phòng này
+    socket.join(showtimeId);
     const holdsInRoom = seatHoldMap[showtimeId] || {};
     
-    // Phân loại: Ghế của TÔI vs Ghế NGƯỜI KHÁC
+    // Phân loại ghế để trả về Client
     const myHolds = [];
     const othersHolds = {};
 
     for (const seat in holdsInRoom) {
-        const holder = holdsInRoom[seat];
-        if (holder.userId === userId) {
-            myHolds.push(seat); // Ghế của mình (để Client tô lại màu xanh)
-        } else {
-            othersHolds[seat] = holder.userId; // Ghế người khác (Client tô màu vàng)
-        }
+      const holder = holdsInRoom[seat];
+      if (holder.userId === userId) {
+        // Trả về ghế của mình + thời gian hết hạn (để hiện lại đồng hồ khi F5)
+        myHolds.push({ seat, expiresAt: holder.expiresAt }); 
+      } else {
+        othersHolds[seat] = holder.userId;
+      }
     }
 
-    // Gửi dữ liệu khởi tạo về cho Client
     socket.emit("load_initial_seats", { myHolds, othersHolds });
   });
 
-  // 2.2. Giữ Ghế (Hold)
+  // 2.2. Giữ Ghế (CÓ TIMER)
   socket.on("hold_seat", ({ showtimeId, seatLabel, userId }) => {
     if (!seatHoldMap[showtimeId]) seatHoldMap[showtimeId] = {};
-
     const currentHolder = seatHoldMap[showtimeId][seatLabel];
 
-    // Nếu ghế đã có người giữ và không phải là mình -> Báo lỗi
+    // Chặn nếu ghế đang bị người khác giữ
     if (currentHolder && currentHolder.userId !== userId) {
-        socket.emit("seat_unavailable", seatLabel);
-        return;
+      socket.emit("seat_unavailable", seatLabel);
+      return;
     }
 
-    // Lưu trạng thái giữ ghế
-    seatHoldMap[showtimeId][seatLabel] = { userId, socketId: socket.id };
+    // 1. Xóa timer cũ nếu có (reset lại 5 phút từ đầu)
+    if (currentHolder && currentHolder.timeoutId) {
+      clearTimeout(currentHolder.timeoutId);
+    }
 
-    // Báo cho mọi người trong phòng biết
+    // 2. Tạo Timer mới: Sau 5 phút tự động nhả ghế
+    const timeoutId = setTimeout(() => {
+      // Check kỹ lại lần cuối trước khi xóa (tránh xóa nhầm ghế đã mua)
+      if (seatHoldMap[showtimeId] && seatHoldMap[showtimeId][seatLabel]?.userId === userId) {
+        console.log(`⏳ Hết giờ! Tự động nhả ghế ${seatLabel} của ${userId}`);
+        delete seatHoldMap[showtimeId][seatLabel];
+        
+        // Báo cho cả phòng biết
+        io.to(showtimeId).emit("seat_released", seatLabel);
+      }
+    }, HOLD_DURATION);
+
+    // 3. Lưu thông tin kèm thời gian hết hạn
+    const expiresAt = Date.now() + HOLD_DURATION;
+    seatHoldMap[showtimeId][seatLabel] = { userId, socketId: socket.id, timeoutId, expiresAt };
+
+    // Báo cho client tô màu
     io.to(showtimeId).emit("seat_held", { seatLabel, holderId: userId });
   });
 
   // 2.3. Nhả Ghế (Unhold)
   socket.on("unhold_seat", ({ showtimeId, seatLabel, userId }) => {
     const currentHolder = seatHoldMap[showtimeId]?.[seatLabel];
-
-    // Chỉ cho phép hủy nếu mình là chủ sở hữu
+    
+    // Chỉ cho phép hủy nếu chính mình là người đang giữ
     if (currentHolder && currentHolder.userId === userId) {
-        delete seatHoldMap[showtimeId][seatLabel];
-        io.to(showtimeId).emit("seat_released", seatLabel);
+      clearTimeout(currentHolder.timeoutId); // Xóa timer để tránh memory leak
+      
+      delete seatHoldMap[showtimeId][seatLabel];
+      io.to(showtimeId).emit("seat_released", seatLabel);
     }
   });
 
 
   // ==========================
-  // PHẦN 3: DISCONNECT (CHUNG)
+  // PHẦN 3: DISCONNECT (DỌN DẸP)
   // ==========================
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
@@ -198,17 +216,17 @@ io.on("connection", (socket) => {
     activeUsers = activeUsers.filter((u) => u.socketId !== socket.id);
     io.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
 
-    // B. Xử lý Booking (Nhả ghế khi thoát)
-    // Duyệt qua tất cả các phòng chiếu
+    // B. Xử lý Booking (Nhả ghế khi thoát hẳn)
     for (const showtimeId in seatHoldMap) {
-        const seats = seatHoldMap[showtimeId];
-        for (const seatLabel in seats) {
-            // Nếu ghế này do socket vừa thoát giữ -> Xóa luôn
-            if (seats[seatLabel].socketId === socket.id) {
-                delete seats[seatLabel];
-                io.to(showtimeId).emit("seat_released", seatLabel);
-            }
+      const seats = seatHoldMap[showtimeId];
+      for (const seatLabel in seats) {
+        // Nếu ghế này do socket vừa thoát đang giữ
+        if (seats[seatLabel].socketId === socket.id) {
+          clearTimeout(seats[seatLabel].timeoutId); // Xóa timer
+          delete seats[seatLabel]; // Xóa ghế
+          io.to(showtimeId).emit("seat_released", seatLabel); // Báo mọi người
         }
+      }
     }
   });
 });

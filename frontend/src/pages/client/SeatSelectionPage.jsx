@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
-import { Armchair, ArrowLeft, Ban } from "lucide-react";
+import { Armchair, ArrowLeft, Ban, Clock } from "lucide-react"; // Import thêm Clock
 import io from "socket.io-client";
 
-// Kết nối Socket (Ngoài component để giữ kết nối ổn định)
+// Kết nối Socket
 const socket = io.connect("http://localhost:5000");
 
 export default function SeatSelectionPage() {
@@ -13,22 +13,23 @@ export default function SeatSelectionPage() {
 
   // --- STATE ---
   const [showtime, setShowtime] = useState(null);
-  const [bookedSeats, setBookedSeats] = useState([]);   // Ghế ĐÃ BÁN (DB) - Màu Xám Đậm
-  const [selectedSeats, setSelectedSeats] = useState([]); // Ghế TÔI đang giữ - Màu Vàng Đậm
-  const [heldSeats, setHeldSeats] = useState({});         // Ghế NGƯỜI KHÁC đang giữ - Màu Vàng Nhạt
+  const [bookedSeats, setBookedSeats] = useState([]);   // Ghế ĐÃ BÁN
+  const [selectedSeats, setSelectedSeats] = useState([]); // Ghế TÔI đang giữ
+  const [heldSeats, setHeldSeats] = useState({});         // Ghế NGƯỜI KHÁC đang giữ
+  
+  // State mới cho Timer
+  const [seatTimers, setSeatTimers] = useState({}); // Lưu thời gian hết hạn: { "A1": 1719... }
+  const [timeLeft, setTimeLeft] = useState(null);   // Thời gian hiển thị (giây)
+  
   const [loading, setLoading] = useState(true);
 
-  // --- 1. HELPER: LẤY ID NGƯỜI DÙNG (CỐ ĐỊNH) ---
-  // Hàm này giúp Server biết "Ai là ai" dù có F5 hay đổi SocketID
+  // --- 1. HELPER: LẤY ID NGƯỜI DÙNG ---
   const getMyUserId = () => {
-     // A. Nếu đã đăng nhập -> Lấy User ID
      const rawData = JSON.parse(localStorage.getItem("user"));
      const currentUser = rawData?.user || rawData;
      if (currentUser && (currentUser._id || currentUser.id)) {
          return currentUser._id || currentUser.id;
      }
-     
-     // B. Nếu là khách -> Lấy Guest ID từ LocalStorage
      let guestId = localStorage.getItem("chat_session_id");
      if (!guestId) {
         guestId = "guest_" + Math.random().toString(36).substr(2, 9);
@@ -37,55 +38,56 @@ export default function SeatSelectionPage() {
      return guestId;
   };
 
-  const myUserId = getMyUserId(); // ID này không đổi khi F5
+  const myUserId = getMyUserId();
 
-  // --- 2. SETUP SOCKET (REAL-TIME LOGIC) ---
+  // --- 2. SETUP SOCKET ---
   useEffect(() => {
-    // A. Join phòng kèm theo UserID để nhận diện chủ nhân
     socket.emit("join_showtime", { showtimeId, userId: myUserId });
 
-    // B. Server trả về hiện trạng phòng (Phân loại ghế TÔI giữ và NGƯỜI KHÁC giữ)
+    // A. Load danh sách ghế + Thời gian hết hạn
     socket.on("load_initial_seats", ({ myHolds, othersHolds }) => {
-        // Khôi phục lại ghế tôi đang chọn (Fix lỗi F5 mất ghế)
         if (myHolds && myHolds.length > 0) {
-            setSelectedSeats(myHolds);
+            // Tách mảng ghế và mảng thời gian
+            const seats = myHolds.map(h => h.seat);
+            const timers = {};
+            myHolds.forEach(h => { timers[h.seat] = h.expiresAt; });
+
+            setSelectedSeats(seats);
+            setSeatTimers(timers);
         }
-        // Hiển thị ghế người khác đang chọn
         setHeldSeats(othersHolds);
     });
 
-    // C. Ai đó vừa giữ ghế (Real-time)
+    // B. Khi ghế được giữ
     socket.on("seat_held", ({ seatLabel, holderId }) => {
         if (holderId === myUserId) {
-            // Nếu là chính mình (ở tab khác) -> Cập nhật vào selectedSeats
             setSelectedSeats(prev => {
                 if (!prev.includes(seatLabel)) return [...prev, seatLabel];
                 return prev;
             });
+            // Tự đặt timer 5 phút cho ghế vừa chọn (Server cũng set 5p tương tự)
+            setSeatTimers(prev => ({ ...prev, [seatLabel]: Date.now() + 5 * 60 * 1000 }));
         } else {
-            // Nếu là người khác -> Cập nhật vào heldSeats
             setHeldSeats(prev => ({ ...prev, [seatLabel]: holderId }));
         }
     });
 
-    // D. Ai đó vừa nhả ghế
+    // C. Khi ghế được nhả (Do bỏ chọn hoặc Hết giờ)
     socket.on("seat_released", (seatLabel) => {
         // Xóa khỏi danh sách người khác giữ
-        setHeldSeats(prev => {
-            const newState = { ...prev };
-            delete newState[seatLabel];
-            return newState;
-        });
-        // Đồng thời xóa khỏi danh sách mình chọn (nếu server force release)
+        setHeldSeats(prev => { const n = {...prev}; delete n[seatLabel]; return n; });
+        
+        // Xóa khỏi danh sách mình chọn + Xóa Timer
         setSelectedSeats(prev => prev.filter(s => s !== seatLabel));
+        setSeatTimers(prev => { const n = {...prev}; delete n[seatLabel]; return n; });
     });
 
-    // E. Ai đó vừa mua xong (Quan trọng)
+    // D. Khi ghế đã bán
     socket.on("seat_sold", (seatLabel) => {
-        setBookedSeats(prev => [...prev, seatLabel]); // Chuyển sang màu xám
-        // Xóa khỏi các trạng thái giữ
+        setBookedSeats(prev => [...prev, seatLabel]); 
         setHeldSeats(prev => { const n = {...prev}; delete n[seatLabel]; return n; });
         setSelectedSeats(prev => prev.filter(s => s !== seatLabel));
+        setSeatTimers(prev => { const n = {...prev}; delete n[seatLabel]; return n; });
     });
 
     return () => {
@@ -97,16 +99,57 @@ export default function SeatSelectionPage() {
   }, [showtimeId, myUserId]);
 
 
-  // --- 3. FETCH DỮ LIỆU TĨNH TỪ API ---
+  // --- 3. LOGIC TÍNH TOÁN ĐỒNG HỒ (CLIENT SIDE) ---
+  useEffect(() => {
+    if (selectedSeats.length === 0) {
+        setTimeLeft(null);
+        return;
+    }
+
+    const interval = setInterval(() => {
+        const now = Date.now();
+        let minExpire = Infinity;
+        
+        // Tìm thời gian hết hạn SỚM NHẤT trong các ghế đang chọn
+        selectedSeats.forEach(seat => {
+            if (seatTimers[seat] && seatTimers[seat] < minExpire) {
+                minExpire = seatTimers[seat];
+            }
+        });
+
+        if (minExpire === Infinity) return;
+
+        // Tính giây còn lại
+        const remaining = Math.max(0, Math.floor((minExpire - now) / 1000));
+        setTimeLeft(remaining);
+
+        // UI Feedback khi hết giờ (thực tế server sẽ tự bắn seat_released để xóa ghế)
+        if (remaining === 0) {
+             // Có thể thêm alert("Hết thời gian giữ vé!") nếu muốn
+        }
+
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [selectedSeats, seatTimers]);
+
+  // Helper format giây -> MM:SS
+  const formatTime = (seconds) => {
+      if (seconds === null) return "";
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+
+  // --- 4. FETCH API ---
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Lấy thông tin phòng chiếu
         const showtimeRes = await api.get(`/showtime/${showtimeId}`);
         setShowtime(showtimeRes.data);
 
-        // Lấy vé đã bán từ DB
         const ticketRes = await api.get(`/ticket/showtime/${showtimeId}`);
         if (Array.isArray(ticketRes.data)) {
           const occupied = ticketRes.data
@@ -124,38 +167,31 @@ export default function SeatSelectionPage() {
   }, [showtimeId]);
 
 
-  // --- 4. XỬ LÝ CHỌN GHẾ ---
+  // --- 5. XỬ LÝ CLICK GHẾ ---
   const handleSelectSeat = (seat) => {
     const seatNum = seat.seatNumber.trim();
     
-    // 1. Chặn nếu ghế bảo trì hoặc đã bán
     if (seat.status === 'maintenance' || bookedSeats.includes(seatNum)) return;
 
-    // 2. Chặn nếu ghế đang bị NGƯỜI KHÁC giữ
     if (heldSeats[seatNum]) {
         alert("Ghế này đang có người khác chọn!");
         return;
     }
 
-    // 3. Logic Chọn / Bỏ chọn
     if (selectedSeats.includes(seatNum)) {
-      // --- BỎ CHỌN (UNHOLD) ---
-      // Cập nhật UI ngay lập tức cho mượt
+      // Unhold
       setSelectedSeats(prev => prev.filter(s => s !== seatNum));
-      // Gửi Socket báo Server nhả ghế
       socket.emit("unhold_seat", { showtimeId, seatLabel: seatNum, userId: myUserId });
     } else {
-      // --- CHỌN (HOLD) ---
+      // Hold
       if (selectedSeats.length >= 8) return alert("Tối đa 8 ghế!");
       
-      // Cập nhật UI ngay
       setSelectedSeats(prev => [...prev, seatNum]);
-      // Gửi Socket báo Server giữ ghế kèm theo UserID
       socket.emit("hold_seat", { showtimeId, seatLabel: seatNum, userId: myUserId });
     }
   };
 
-  // Tính tổng tiền
+  // Tính tiền
   const calculateTotal = () => {
     if (!showtime) return 0;
     return selectedSeats.reduce((total, seatNum) => {
@@ -179,9 +215,21 @@ export default function SeatSelectionPage() {
   return (
     <div className="bg-gray-900 min-h-screen text-white flex flex-col">
        {/* Header */}
-       <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center">
-          <button onClick={() => navigate(-1)} className="text-white p-2 hover:bg-gray-700 rounded-full"><ArrowLeft/></button>
-          <span className="ml-4 font-bold uppercase text-yellow-500 text-lg">{showtime.movie.title}</span>
+       <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center justify-between">
+          <div className="flex items-center">
+             <button onClick={() => navigate(-1)} className="text-white p-2 hover:bg-gray-700 rounded-full"><ArrowLeft/></button>
+             <span className="ml-4 font-bold uppercase text-yellow-500 text-lg">{showtime.movie.title}</span>
+          </div>
+
+          {/* 🔥 ĐỒNG HỒ ĐẾM NGƯỢC */}
+          {timeLeft !== null && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-red-900/30 border border-red-600 rounded-lg animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+                  <Clock size={20} className="text-red-500"/>
+                  <span className="font-mono font-bold text-red-500 text-xl tracking-widest">
+                      {formatTime(timeLeft)}
+                  </span>
+              </div>
+          )}
        </div>
 
        {/* BODY */}
@@ -198,29 +246,26 @@ export default function SeatSelectionPage() {
                 {room.seats.map((seat) => {
                   const seatNum = seat.seatNumber.trim();
 
-                  // --- LOGIC TRẠNG THÁI GHẾ ---
-                  const isTaken = bookedSeats.includes(seatNum);      // Đã bán (Database)
-                  const isMaintenance = seat.status === 'maintenance'; // Bảo trì
-                  const isSelected = selectedSeats.includes(seatNum); // TÔI đang chọn (Xanh/Vàng đậm)
-                  const isHeldByOthers = heldSeats[seatNum];          // NGƯỜI KHÁC đang giữ (Vàng nhạt)
+                  // State
+                  const isTaken = bookedSeats.includes(seatNum);
+                  const isMaintenance = seat.status === 'maintenance'; 
+                  const isSelected = selectedSeats.includes(seatNum); 
+                  const isHeldByOthers = heldSeats[seatNum];
                   const isVip = seat.type === 'vip';
 
-                  // --- LOGIC MÀU SẮC (VISUAL) ---
+                  // Visual
                   let seatClasses = "border-gray-600 text-gray-400 hover:border-white hover:text-white cursor-pointer"; 
                   
                   if (isMaintenance) {
                      seatClasses = "bg-red-900/20 border-red-900 text-red-700 cursor-not-allowed"; 
                   
                   } else if (isTaken) {
-                     // Ghế đã bán: Tối màu, không click được
                      seatClasses = "bg-gray-600 border-transparent text-gray-400 opacity-50 cursor-not-allowed";
 
                   } else if (isHeldByOthers) {
-                     // Ghế người khác đang giữ: Màu vàng nhạt, không click được
                      seatClasses = "bg-yellow-600/50 border-yellow-600 text-yellow-200 cursor-not-allowed opacity-80";
 
                   } else if (isSelected) {
-                     // Ghế TÔI chọn: Màu vàng chuẩn, nổi bật
                      seatClasses = "bg-yellow-500 text-black border-yellow-500 font-bold shadow-lg scale-110 z-10"; 
                   
                   } else if (isVip) {
@@ -232,7 +277,6 @@ export default function SeatSelectionPage() {
                   return (
                      <button
                         key={seatNum}
-                        // Disable nếu: Đã bán OR Bảo trì OR Người khác đang giữ
                         disabled={isTaken || isMaintenance || isHeldByOthers} 
                         onClick={() => handleSelectSeat(seat)}
                         className={`
@@ -242,7 +286,6 @@ export default function SeatSelectionPage() {
                      >
                         {isMaintenance ? <Ban size={14}/> : seatNum}
 
-                        {/* Tooltip hiển thị trạng thái */}
                         <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-white text-black text-xs font-bold px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition pointer-events-none whitespace-nowrap shadow-lg z-20">
                            {isMaintenance ? "Bảo trì" : 
                             isTaken ? "Đã bán" : 
@@ -267,7 +310,7 @@ export default function SeatSelectionPage() {
           </div>
        </div>
 
-       {/* Footer thanh toán */}
+       {/* Footer */}
        <div className="bg-white p-4 text-black flex justify-between items-center sticky bottom-0 shadow-[0_-5px_10px_rgba(0,0,0,0.2)]">
           <div>Ghế: <b className="text-lg text-red-600">{selectedSeats.join(", ")}</b></div>
           <div className="flex gap-4 items-center">

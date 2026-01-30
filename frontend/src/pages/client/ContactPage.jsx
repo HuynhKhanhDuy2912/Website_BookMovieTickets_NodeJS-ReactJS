@@ -163,13 +163,13 @@ export default function ContactPage() {
           <div className="space-y-8">
              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                <div className="bg-gray-800 p-6 rounded-lg text-center border border-gray-700 hover:border-yellow-500 transition">
-                  <MapPin className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Địa chỉ</h3><p className="text-sm text-gray-400">Trà Vinh</p>
+                  <MapPin className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Địa chỉ</h3><p className="text-sm text-gray-400">TP.HCM</p>
                </div>
                <div className="bg-gray-800 p-6 rounded-lg text-center border border-gray-700 hover:border-yellow-500 transition">
-                  <Phone className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Hotline</h3><p className="text-sm text-gray-400">1900 123 456</p>
+                  <Phone className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Hotline</h3><p className="text-sm text-gray-400">1900 1234</p>
                </div>
                <div className="bg-gray-800 p-6 rounded-lg text-center border border-gray-700 hover:border-yellow-500 transition">
-                  <Mail className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Email</h3><p className="text-sm text-gray-400">support@cinema.vn</p>
+                  <Mail className="mx-auto text-yellow-500 mb-2" /><h3 className="font-bold mb-1">Email</h3><p className="text-sm text-gray-400">support@popcorn.vn</p>
                </div>
              </div>
              

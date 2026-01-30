@@ -6,126 +6,109 @@ const Combo = require("../models/Combo");
 // --- 1. TẠO ĐƠN HÀNG MỚI (BẢO MẬT CAO + REAL-TIME) ---
 exports.createOrder = async (req, res) => {
   try {
-    // ⚠️ CHÚ Ý: KHÔNG LẤY 'total' TỪ BODY ĐỂ TRÁNH HACKER SỬA GIÁ
+    console.log("---------------- START CREATE ORDER ----------------"); // 🚩 DẤU HIỆU CODE MỚI
     const { showtimeId, seats, combos, paymentMethod } = req.body;
-    
-    // Lấy User ID từ Token (An toàn hơn lấy từ body)
-    const userId = req.user ? req.user._id : req.body.userId; 
+    const userId = req.user ? req.user._id : req.body.userId;
 
-    // A. LẤY THÔNG TIN SHOWTIME & KIỂM TRA THỜI GIAN
+    // A. LẤY THÔNG TIN SHOWTIME
     const showtimeData = await Showtime.findById(showtimeId);
-    if (!showtimeData) {
-      return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
-    }
+    if (!showtimeData) return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
 
-    // ⛔ SECURITY: Chặn đặt vé suất đã chiếu
-    const now = new Date();
-    const startTime = new Date(showtimeData.startTime);
-    if (now >= startTime) {
-         return res.status(400).json({ message: "Suất chiếu đã bắt đầu hoặc kết thúc, không thể đặt vé!" });
-    }
+    // Ép kiểu giá vé về số (Chống lỗi nếu DB lưu null)
+    const ticketPrice = Number(showtimeData.price) || 50000;
+    console.log(`🎫 Giá vé gốc: ${ticketPrice}`);
 
-    // B. KIỂM TRA GHẾ TRÙNG (QUAN TRỌNG NHẤT)
-    const existingTickets = await Ticket.find({
-      showtime: showtimeId,
-      seatNumber: { $in: seats }
-    });
+    // B. KIỂM TRA GHẾ TRÙNG
+    const existingTickets = await Ticket.find({ showtime: showtimeId, seatNumber: { $in: seats } });
+    if (existingTickets.length > 0) return res.status(400).json({ message: "Ghế đã có người đặt!" });
 
-    if (existingTickets.length > 0) {
-      const takenSeats = existingTickets.map(t => t.seatNumber).join(", ");
-      return res.status(400).json({ 
-        message: `Ghế ${takenSeats} đã vừa có người khác nhanh tay đặt trước. Vui lòng chọn ghế khác!` 
-      });
-    }
-    
-    if (!showtimeData.price) {
-        return res.status(500).json({ 
-            message: "Lỗi hệ thống: Suất chiếu này chưa được cấu hình giá vé. Vui lòng liên hệ Admin!" 
-        });
-    }
+    // C. TÍNH TIỀN (LOGIC BẤT TỬ)
+    let calculatedTotal = 0;
 
-    // C. TÍNH TIỀN TẠI SERVER
     // 1. Tính tiền Vé
-    const ticketPrice = showtimeData.price; 
-    let calculatedTotal = ticketPrice * seats.length;
+    const seatList = Array.isArray(seats) ? seats : [];
+    const ticketTotal = ticketPrice * seatList.length;
+    calculatedTotal += ticketTotal;
+    console.log(`➕ Tiền vé (${seatList.length} ghế): ${ticketTotal}`);
 
     // 2. Tính tiền Combo
     const processedCombos = [];
-    if (combos && combos.length > 0) {
+    if (combos && Array.isArray(combos)) {
       for (const item of combos) {
-         const comboDb = await Combo.findById(item.comboId || item._id);
-         if (comboDb) {
-            const qty = item.quantity || 1;
-            calculatedTotal += comboDb.price * qty;
-            
+        const comboDb = await Combo.findById(item.comboId || item._id);
+        if (comboDb) {
+          const qty = parseInt(item.quantity) || 0;
+          const price = Number(comboDb.price) || 0;
+
+          if (qty > 0) {
+            const itemTotal = price * qty;
+            calculatedTotal += itemTotal;
+            console.log(`➕ Combo ${comboDb.name} (${qty} x ${price}): ${itemTotal}`);
+
             processedCombos.push({
-               comboId: comboDb._id,
-               name: comboDb.name,
-               quantity: qty,
-               price: comboDb.price 
+              comboId: comboDb._id, name: comboDb.name, quantity: qty, price: price
             });
-         }
+          }
+        }
       }
     }
 
-    // D. TẠO MÃ ĐƠN HÀNG
-    const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // ⛔ CHỐT CHẶN CUỐI CÙNG (Fix lỗi NaN)
+    if (isNaN(calculatedTotal) || calculatedTotal < 0) {
+      console.error("⚠️ PHÁT HIỆN LỖI NaN! Đã Reset về 0.");
+      calculatedTotal = 0;
+    }
 
-    // E. LƯU ORDER
+    console.log(`💰 TỔNG TIỀN CHỐT LƯU DB: ${calculatedTotal}`); // 🚩 KIỂM TRA DÒNG NÀY TRÊN TERMINAL
+
+    // D. LƯU ĐƠN
+    const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newOrder = await Order.create({
       user: userId,
       showtime: showtimeId,
       orderCode: orderCode,
-      seats: seats,             
-      totalPrice: calculatedTotal,
+      seats: seatList,
+      totalPrice: calculatedTotal, // Đã được bảo vệ
       paymentMethod: paymentMethod || "Cash",
-      status: "success",        
+      status: "success",
       combos: processedCombos
     });
 
-    // F. TẠO TICKET (Khóa ghế)
-    const tickets = seats.map(seat => ({
-      movie: showtimeData.movie, 
-      showtime: showtimeId,
-      user: userId,
-      order: newOrder._id,
-      seatNumber: seat,         
-      price: ticketPrice, 
-      status: "booked"          
-    }));
-
-    await Ticket.insertMany(tickets);
-
-    // 🔥 [SOCKET UPDATE]: Báo cho tất cả client khác biết ghế này ĐÃ BÁN
-    if (req.io) {
-        seats.forEach(seatLabel => {
-            // Gửi sự kiện 'seat_sold' tới phòng 'showtimeId'
-            req.io.to(showtimeId).emit("seat_sold", seatLabel);
-        });
-        console.log(`📡 Socket: Đã báo bán ghế ${seats} cho phòng ${showtimeId}`);
+    // E. TẠO TICKET
+    if (seatList.length > 0) {
+      const tickets = seatList.map(seat => ({
+        movie: showtimeData.movie, showtime: showtimeId, user: userId,
+        order: newOrder._id, seatNumber: seat, price: ticketPrice, status: "booked"
+      }));
+      await Ticket.insertMany(tickets);
     }
 
-    res.status(201).json({ message: "Đặt vé thành công", order: newOrder });
+    // F. SOCKET
+    if (req.io) {
+      seatList.forEach(seatLabel => req.io.to(showtimeId).emit("seat_sold", seatLabel));
+    }
+
+    res.status(201).json({ success: true, order: newOrder });
+    console.log("---------------- END CREATE ORDER ----------------");
 
   } catch (err) {
-    console.error("Lỗi đặt vé:", err);
-    res.status(500).json({ message: "Lỗi tạo đơn hàng", error: err.message });
+    console.error("🔥 Lỗi tạo đơn:", err);
+    res.status(500).json({ message: "Lỗi Server", error: err.message });
   }
 };
-
 // --- 2. LẤY ĐƠN HÀNG CỦA TÔI ---
 exports.getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id }) 
+    const orders = await Order.find({ user: req.user._id })
       .populate({
         path: "showtime",
         populate: [
-            { path: "movie", select: "title posterUrl duration" }, 
-            { path: "cinema", select: "name" },   
-            { path: "room", select: "name" }      
+          { path: "movie", select: "title posterUrl duration" },
+          { path: "cinema", select: "name" },
+          { path: "room", select: "name" }
         ]
       })
-      .sort({ createdAt: -1 }); 
+      .sort({ createdAt: -1 });
 
     res.json(orders);
   } catch (err) {
@@ -144,7 +127,7 @@ exports.getAllOrders = async (req, res) => {
         populate: { path: "movie", select: "title" }
       })
       .sort({ createdAt: -1 });
-      
+
     res.json(orders);
   } catch (err) {
     res.status(500).json({ message: "Lỗi khi lấy danh sách tất cả đơn hàng", error: err.message });
@@ -170,23 +153,23 @@ exports.deleteOrder = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
     const showtimeId = order.showtime.toString(); // Lấy ID phòng để emit socket
-    
+
     // 2. Tìm các vé liên quan để lấy danh sách ghế cần nhả
     const tickets = await Ticket.find({ order: req.params.id });
     const releasedSeats = tickets.map(t => t.seatNumber);
 
     // 3. Xóa Order
     await Order.findByIdAndDelete(req.params.id);
-    
+
     // 4. Xóa Tickets
     await Ticket.deleteMany({ order: req.params.id });
 
     // 🔥 [SOCKET UPDATE]: Báo cho client biết ghế đã được NHẢ RA (Trống lại)
     if (req.io && releasedSeats.length > 0) {
-        releasedSeats.forEach(seatLabel => {
-            req.io.to(showtimeId).emit("seat_released", seatLabel);
-        });
-        console.log(`📡 Socket: Đã nhả ghế ${releasedSeats} cho phòng ${showtimeId}`);
+      releasedSeats.forEach(seatLabel => {
+        req.io.to(showtimeId).emit("seat_released", seatLabel);
+      });
+      console.log(`📡 Socket: Đã nhả ghế ${releasedSeats} cho phòng ${showtimeId}`);
     }
 
     res.json({ message: "Xóa đơn hàng và vé liên quan thành công" });

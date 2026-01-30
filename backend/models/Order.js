@@ -2,15 +2,42 @@ const mongoose = require("mongoose");
 
 const orderSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    
-    // THÊM: Để biết đơn này thuộc suất chiếu nào (lấy tên phim, rạp)
-    showtime: { type: mongoose.Schema.Types.ObjectId, ref: "Showtime", required: true },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    // Liên kết với suất chiếu
+    showtime: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Showtime",
+      required: true,
+    },
+    orderCode: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    // 👇 QUAN TRỌNG: Phải có dòng này thì mới lưu được danh sách ghế (Mảng chuỗi)
+    seats: [String], 
 
-    // THÊM: Để hiển thị nhanh danh sách ghế ở trang Profile (VD: ["A1", "A2"])
-    seats: [{ type: String }], 
-
-    // SỬA: Lưu chi tiết combo (số lượng, tên, giá lúc mua)
+    // 👇 QUAN TRỌNG: Phải có dòng này thì mới lưu được Tổng tiền (Tránh NaN)
+    totalPrice: {
+      type: Number,
+      required: true,
+      default: 0
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["Momo", "ZaloPay", "VNPAY", "ATM", "Card", "Cash"],
+      default: "Cash",
+    },
+    status: {
+      type: String,
+      enum: ["pending", "success", "failed", "cancelled"],
+      default: "pending",
+    },
+    // Lưu danh sách combo (nếu có)
     combos: [
       {
         comboId: { type: mongoose.Schema.Types.ObjectId, ref: "Combo" },
@@ -18,26 +45,7 @@ const orderSchema = new mongoose.Schema(
         quantity: Number,
         price: Number
       }
-    ],
-
-    // SỬA: Đổi tên thành totalPrice cho khớp với Controller
-    totalPrice: { type: Number, required: true },
-    
-    orderCode: { type: String, unique: true },
-    
-    paymentMethod: {
-      type: String,
-      // Mở rộng thêm các loại thanh toán
-      enum: ["Momo", "ZaloPay", "VNPAY", "ATM", "Card", "Cash"], 
-      default: "Cash",
-    },
-
-    // Status của đơn hàng
-    status: { 
-      type: String, 
-      enum: ["pending", "success", "failed", "cancelled"], 
-      default: "pending" 
-    },
+    ]
   },
   { timestamps: true }
 );

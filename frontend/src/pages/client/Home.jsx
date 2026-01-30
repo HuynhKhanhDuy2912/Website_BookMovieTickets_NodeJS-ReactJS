@@ -4,7 +4,7 @@ import api from "../../api/axiosConfig";
 import { 
   Calendar, Clock, ArrowRight, PlayCircle, Ticket, 
   Search, X, ChevronLeft, ChevronRight 
-} from "lucide-react"; // Thêm icon điều hướng
+} from "lucide-react"; 
 
 export default function Home() {
   const navigate = useNavigate();
@@ -59,16 +59,13 @@ export default function Home() {
   useEffect(() => {
     if (banners.length === 0) return;
 
-    // Tự động chuyển slide sau 5 giây
     const interval = setInterval(() => {
       setCurrentIndex((prevIndex) => (prevIndex + 1) % banners.length);
     }, 5000);
 
-    // Xóa interval khi unmount hoặc khi banners thay đổi
     return () => clearInterval(interval);
   }, [banners]);
 
-  // Hàm chuyển slide thủ công
   const nextSlide = () => {
     setCurrentIndex((prev) => (prev + 1) % banners.length);
   };
@@ -77,11 +74,16 @@ export default function Home() {
     setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length);
   };
 
-  // --- LOGIC LỌC PHIM ---
+  // --- LOGIC LỌC PHIM & GIỚI HẠN HIỂN THỊ ---
   const originalList = activeTab === "now" ? moviesNow : moviesComing;
-  const displayedMovies = originalList.filter(movie => 
+  
+  // 1. Lọc theo từ khóa tìm kiếm
+  const filteredMovies = originalList.filter(movie => 
     movie.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // 2. 🔥 GIỚI HẠN 8 PHIM (Cắt mảng)
+  const displayedMovies = filteredMovies.slice(0, 8);
 
   if (loading) {
     return (
@@ -98,7 +100,6 @@ export default function Home() {
       <div className="relative w-full h-[500px] md:h-[600px] overflow-hidden group">
         {banners.length > 0 && (
           <>
-            {/* Render danh sách banners xếp chồng lên nhau */}
             {banners.map((banner, index) => (
                 <div 
                     key={banner._id}
@@ -106,7 +107,6 @@ export default function Home() {
                         index === currentIndex ? "opacity-100 z-10" : "opacity-0 z-0"
                     }`}
                 >
-                    {/* Background Image mờ */}
                     <div className="absolute inset-0 bg-black/50 z-10"></div> 
                     <img 
                       src={banner.posterUrl} 
@@ -114,10 +114,8 @@ export default function Home() {
                       className="w-full h-full object-cover object-top filter blur-sm scale-110" 
                     />
                     
-                    {/* Content */}
                     <div className="absolute inset-0 z-20 container mx-auto px-4 flex items-center h-full">
                       <div className="flex flex-col md:flex-row gap-8 items-center w-full mt-10 md:mt-0">
-                        {/* Poster chính (có hiệu ứng animate khi active) */}
                         <img 
                            src={banner.posterUrl} 
                            alt={banner.title} 
@@ -161,7 +159,6 @@ export default function Home() {
                 </div>
             ))}
 
-            {/* Nút Điều Hướng (Chỉ hiện khi hover vào banner) */}
             <button 
                 onClick={prevSlide}
                 className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-black/30 hover:bg-yellow-500 hover:text-black text-white p-3 rounded-full backdrop-blur-sm transition opacity-0 group-hover:opacity-100"
@@ -175,7 +172,6 @@ export default function Home() {
                 <ChevronRight size={24} />
             </button>
 
-            {/* Dots Indicator (Dấu chấm tròn bên dưới) */}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-2">
                 {banners.map((_, idx) => (
                     <button
@@ -191,7 +187,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* ================= SECTION 2: DANH SÁCH PHIM & TÌM KIẾM ================= */}
+      {/* ================= SECTION 2: DANH SÁCH PHIM ================= */}
       <div className="container mx-auto px-4 py-16">
         
         {/* --- THANH TÌM KIẾM --- */}
@@ -238,7 +234,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Movie Grid */}
+        {/* Movie Grid (ĐÃ GIỚI HẠN 8 PHIM) */}
         {displayedMovies.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
               {displayedMovies.map((movie) => (
@@ -275,6 +271,7 @@ export default function Home() {
             </div>
         )}
 
+        {/* Nút Xem Tất Cả */}
         <div className="text-center mt-12">
            <Link to="/movies" className="inline-flex items-center gap-2 text-yellow-500 hover:text-yellow-400 font-semibold border border-yellow-500 px-6 py-2 rounded hover:bg-yellow-500/10 transition">
               Xem tất cả phim <ArrowRight size={18} />

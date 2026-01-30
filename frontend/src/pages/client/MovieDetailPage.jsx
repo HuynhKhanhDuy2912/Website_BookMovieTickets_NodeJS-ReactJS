@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
-import { 
-  Calendar, Clock, Star, PlayCircle, MapPin, 
-  ChevronRight, Ticket, User, ArrowLeft 
+import {
+  Calendar, Clock, Star, PlayCircle, MapPin,
+  ChevronRight, Ticket, User, ArrowLeft, X, Send
 } from "lucide-react";
 
 // --- 1. HELPER XỬ LÝ ẢNH ---
@@ -31,43 +31,73 @@ const getNext7Days = () => {
 };
 
 const formatDate = (date) => {
-  return date.toISOString().split('T')[0]; // YYYY-MM-DD
+  return date.toISOString().split('T')[0];
 };
 
 export default function MovieDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  
-  // State
+
+  // --- STATE DỮ LIỆU ---
   const [movie, setMovie] = useState(null);
+  const [relatedMovies, setRelatedMovies] = useState([]); 
   const [showtimes, setShowtimes] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // State lịch chiếu
+
+  // --- STATE LỊCH CHIẾU ---
   const [selectedDate, setSelectedDate] = useState(new Date());
-  
+
+  // --- STATE REVIEW ---
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" });
+  const [submittingReview, setSubmittingReview] = useState(false);
+
   // 1. FETCH DATA
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
-        const [movieRes, showtimeRes, reviewRes] = await Promise.all([
-          api.get(`/movie/${id}`),             
-          api.get(`/showtime`),                
-          api.get(`/review?movieId=${id}`)     
+        const [movieRes, showtimeRes, reviewRes, allMoviesRes] = await Promise.all([
+          api.get(`/movie/${id}`),
+          api.get(`/showtime`),
+          api.get(`/review?movieId=${id}`),
+          api.get(`/movie`)
         ]);
 
         setMovie(movieRes.data);
-        
+
+        // Xử lý phim liên quan
+        if (allMoviesRes.data) {
+            let others = allMoviesRes.data.filter(m => m._id !== id);
+            others = others.sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 6);
+
+            const othersWithRealRating = await Promise.all(others.map(async (m) => {
+                try {
+                    const rRes = await api.get(`/review?movieId=${m._id}`);
+                    const mReviews = rRes.data || [];
+                    let avg = 0;
+                    if (mReviews.length > 0) {
+                        const total = mReviews.reduce((sum, r) => sum + (r.rating || 0), 0);
+                        avg = (total / mReviews.length).toFixed(1);
+                    }
+                    return { ...m, realRating: avg };
+                } catch (e) {
+                    return { ...m, realRating: 0 };
+                }
+            }));
+
+            othersWithRealRating.sort((a, b) => b.realRating - a.realRating);
+            setRelatedMovies(othersWithRealRating);
+        }
+
         const allShowtimes = Array.isArray(showtimeRes.data) ? showtimeRes.data : [];
-        const movieShowtimes = allShowtimes.filter(st => 
-            (st.movie && (st.movie._id === id || st.movie === id))
+        const movieShowtimes = allShowtimes.filter(st =>
+          (st.movie && (st.movie._id === id || st.movie === id))
         );
         setShowtimes(movieShowtimes);
 
-        if(reviewRes?.data) setReviews(reviewRes.data);
+        if (reviewRes?.data) setReviews(reviewRes.data);
 
       } catch (error) {
         console.error("Lỗi tải chi tiết phim:", error);
@@ -80,8 +110,14 @@ export default function MovieDetailPage() {
     window.scrollTo(0, 0);
   }, [id]);
 
+  // --- 2. TÍNH ĐIỂM TRUNG BÌNH ---
+  const averageRating = useMemo(() => {
+    if (reviews.length === 0) return 0;
+    const total = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
+    return (total / reviews.length).toFixed(1);
+  }, [reviews]);
 
-  // 2. XỬ LÝ LỊCH CHIẾU
+  // Xử lý lịch chiếu
   const filteredShowtimes = showtimes.filter(st => {
     const stDate = new Date(st.startTime).toISOString().split('T')[0];
     const selectDateStr = formatDate(selectedDate);
@@ -97,7 +133,44 @@ export default function MovieDetailPage() {
     return acc;
   }, {});
 
-  // Loading UI
+  // --- 3. CÁC HÀM XỬ LÝ REVIEW ---
+  const handleOpenReview = () => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    if (!user) {
+      alert("Vui lòng đăng nhập để viết đánh giá!");
+      navigate("/login");
+      return;
+    }
+    setShowReviewModal(true);
+  };
+
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewForm.comment.trim()) return alert("Vui lòng nhập nội dung đánh giá");
+
+    try {
+      setSubmittingReview(true);
+      await api.post("/review", {
+        movieId: id,
+        rating: reviewForm.rating,
+        comment: reviewForm.comment
+      });
+
+      const res = await api.get(`/review?movieId=${id}`);
+      setReviews(res.data);
+
+      setReviewForm({ rating: 5, comment: "" });
+      setShowReviewModal(false);
+      alert("Cảm ơn bạn đã đánh giá!");
+
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Lỗi khi gửi đánh giá");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -108,258 +181,262 @@ export default function MovieDetailPage() {
 
   if (!movie) return <div className="text-white text-center py-20">Không tìm thấy phim.</div>;
 
+  // 🔥 CHECK: PHIM ĐÃ CHIẾU CHƯA?
+  // Điều kiện: Status là 'now_showing' HOẶC ngày công chiếu <= hôm nay
+  const isReleased = movie.status === 'now_showing' || new Date(movie.releaseDate) <= new Date();
+
   return (
-    <div className="bg-gray-900 min-h-screen text-white pb-20">
-      
-      {/* ================= HERO SECTION ================= */}
+    <div className="bg-gray-900 min-h-screen text-white pb-20 relative">
+
+      {/* HERO SECTION */}
       <div className="relative h-[500px] md:h-[600px] w-full overflow-hidden">
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center blur-sm opacity-50 scale-110"
           style={{ backgroundImage: `url(${getImageUrl(movie.posterUrl)})` }}
         ></div>
         <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent"></div>
 
         <div className="container mx-auto px-4 h-full relative z-10 flex flex-col md:flex-row items-center md:items-end pb-10 gap-8 pt-20 md:pt-0">
-          
           <Link to="/" className="absolute top-4 left-4 md:hidden text-white bg-black/50 p-2 rounded-full">
             <ArrowLeft size={24} />
           </Link>
 
           <div className="w-48 md:w-64 shrink-0 rounded-lg overflow-hidden shadow-2xl border-2 border-white/20 relative group">
-             <img 
-               src={getImageUrl(movie.posterUrl)} 
-               alt={movie.title} 
-               className="w-full h-full object-cover"
-               onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x600?text=Error"; }}
-             />
-             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer">
-                <PlayCircle size={48} className="text-white"/>
-             </div>
+            <img
+              src={getImageUrl(movie.posterUrl)}
+              alt={movie.title}
+              className="w-full h-full object-cover"
+              onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x600?text=Error"; }}
+            />
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer">
+              <PlayCircle size={48} className="text-white" />
+            </div>
           </div>
 
           <div className="flex-1 text-center md:text-left">
-             <span className={`text-xs font-bold px-2 py-1 rounded uppercase mb-3 inline-block ${
-                movie.status === 'now_showing' ? 'bg-green-600 text-white' : 'bg-orange-500 text-white'
-             }`}>
-               {movie.status === 'now_showing' ? 'Đang chiếu' : 'Sắp chiếu'}
-             </span>
-             <h1 className="text-3xl md:text-5xl font-extrabold mb-2 text-white drop-shadow-lg">{movie.title}</h1>
-             <p className="text-gray-300 text-lg mb-4 italic font-medium">
-                {Array.isArray(movie.genre) ? movie.genre.join(", ") : movie.genre}
-             </p>
-             
-             <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 text-sm text-gray-200 mb-6">
-               <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
-                 <Clock size={16} className="text-yellow-500"/> {movie.duration} phút
-               </span>
-               <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
-                 <Calendar size={16} className="text-yellow-500"/> {new Date(movie.releaseDate).toLocaleDateString('vi-VN')}
-               </span>
-               <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
-                 <Star size={16} className="text-yellow-500"/> {movie.rating || 0}/10 ({reviews.length} đánh giá)
-               </span>
-             </div>
+            <span className={`text-xs font-bold px-2 py-1 rounded uppercase mb-3 inline-block ${movie.status === 'now_showing' ? 'bg-green-600 text-white' : 'bg-orange-500 text-white'
+              }`}>
+              {movie.status === 'now_showing' ? 'Đang chiếu' : 'Sắp chiếu'}
+            </span>
+            <h1 className="text-3xl md:text-5xl font-extrabold mb-2 text-white drop-shadow-lg">{movie.title}</h1>
+            <p className="text-gray-300 text-lg mb-4 italic font-medium">
+              {Array.isArray(movie.genre) ? movie.genre.join(", ") : movie.genre}
+            </p>
 
-             <div className="flex gap-4 justify-center md:justify-start">
-               {movie.trailerUrl && (
-                 <button 
-                    onClick={() => window.open(movie.trailerUrl, '_blank')}
-                    className="bg-red-600 hover:bg-red-700 text-white px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition shadow-lg hover:shadow-red-600/40"
-                 >
-                   <PlayCircle size={20}/> Trailer
-                 </button>
-               )}
-               <button 
-                  onClick={() => document.getElementById('booking-section').scrollIntoView({ behavior: 'smooth' })}
-                  className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition shadow-lg hover:shadow-yellow-500/40"
-               >
-                  <Ticket size={20}/> Mua Vé
-               </button>
-             </div>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 text-sm text-gray-200 mb-6">
+              <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
+                <Clock size={16} className="text-yellow-500" /> {movie.duration} phút
+              </span>
+              <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
+                <Calendar size={16} className="text-yellow-500" /> {new Date(movie.releaseDate).toLocaleDateString('vi-VN')}
+              </span>
+              <span className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
+                <Star size={16} className="text-yellow-500" fill="currentColor" />
+                <span className="font-bold text-white">{averageRating}/5</span>
+                <span className="text-gray-400">({reviews.length} đánh giá)</span>
+              </span>
+            </div>
+
+            <div className="flex gap-4 justify-center md:justify-start">
+              {movie.trailerUrl && (
+                <button
+                  onClick={() => window.open(movie.trailerUrl, '_blank')}
+                  className="bg-red-600 hover:bg-red-700 text-white px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition shadow-lg hover:shadow-red-600/40"
+                >
+                  <PlayCircle size={20} /> Trailer
+                </button>
+              )}
+              <button
+                onClick={() => document.getElementById('booking-section').scrollIntoView({ behavior: 'smooth' })}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 md:px-8 py-3 rounded-full font-bold flex items-center gap-2 transition shadow-lg hover:shadow-yellow-500/40"
+              >
+                <Ticket size={20} /> Mua Vé
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ================= NỘI DUNG CHÍNH ================= */}
       <div className="container mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
-        
-        {/* CỘT TRÁI: LỊCH CHIẾU & NỘI DUNG */}
+
+        {/* CỘT TRÁI */}
         <div className="lg:col-span-2">
-          
-          {/* 1. Nội dung phim */}
+
+          {/* Nội dung phim */}
           <section className="mb-10 bg-gray-800/50 p-6 rounded-2xl border border-gray-700">
             <h2 className="text-2xl font-bold mb-4 border-l-4 border-yellow-500 pl-3 text-white">Nội Dung Phim</h2>
-            <p className="text-gray-300 leading-relaxed text-justify mb-6">
-              {movie.description}
-            </p>
+            <p className="text-gray-300 leading-relaxed text-justify mb-6">{movie.description}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm border-t border-gray-700 pt-4">
-               <div><span className="text-gray-500">Đạo diễn:</span> <span className="text-white font-medium ml-2">{movie.director || "Đang cập nhật"}</span></div>
-               <div><span className="text-gray-500">Diễn viên:</span> <span className="text-white font-medium ml-2">{movie.actor || "Đang cập nhật"}</span></div>
-               <div><span className="text-gray-500">Quốc gia:</span> <span className="text-white font-medium ml-2">{movie.country || "Đang cập nhật"}</span></div>
-               <div><span className="text-gray-500">Độ tuổi:</span> <span className="text-white font-medium ml-2 bg-red-600 px-2 rounded text-xs">{movie.ageRating || "P"}</span></div>
+              <div><span className="text-gray-500">Đạo diễn:</span> <span className="text-white font-medium ml-2">{movie.director || "Đang cập nhật"}</span></div>
+              <div><span className="text-gray-500">Diễn viên:</span> <span className="text-white font-medium ml-2">{movie.cast || "Đang cập nhật"}</span></div>
+              <div><span className="text-gray-500">Quốc gia:</span> <span className="text-white font-medium ml-2">{movie.country || "Đang cập nhật"}</span></div>
+              <div><span className="text-gray-500">Độ tuổi:</span> <span className="text-white font-medium ml-2 bg-red-600 px-2 rounded text-xs">{movie.ageRating || "P"}</span></div>
             </div>
           </section>
 
-          {/* 2. Lịch chiếu (Booking Section) */}
+          {/* Lịch chiếu */}
           <section id="booking-section" className="mb-10">
-             <h2 className="text-2xl font-bold mb-6 border-l-4 border-yellow-500 pl-3 text-white">Lịch Chiếu</h2>
-             
-             {/* Chọn Ngày */}
-             <div className="flex gap-3 overflow-x-auto pb-4 mb-6 scrollbar-thin scrollbar-thumb-gray-700">
-                {getNext7Days().map((date, idx) => {
-                   const isActive = formatDate(date) === formatDate(selectedDate);
-                   const dayName = idx === 0 ? "Hôm nay" : `Thứ ${date.getDay() + 1 === 1 ? 'CN' : date.getDay() + 1}`;
-                   return (
-                      <button 
-                        key={idx}
-                        onClick={() => setSelectedDate(date)}
-                        className={`min-w-[80px] p-3 rounded-xl text-center transition border ${
-                           isActive 
-                             ? "bg-yellow-500 text-black border-yellow-500 font-bold shadow-lg shadow-yellow-500/20" 
-                             : "bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white"
-                        }`}
-                      >
-                         <div className="text-xs uppercase mb-1">{dayName}</div>
-                         <div className="text-xl font-bold">{date.getDate()}/{date.getMonth() + 1}</div>
-                      </button>
-                   )
-                })}
-             </div>
-
-             {/* Danh sách Rạp & Giờ chiếu */}
-             <div className="space-y-4">
-                {Object.keys(groupedShowtimes).length > 0 ? (
-                   Object.keys(groupedShowtimes).map(cinemaId => {
-                      const { info, times } = groupedShowtimes[cinemaId];
-                      return (
-                         <div key={cinemaId} className="bg-gray-800 rounded-xl p-6 border border-gray-700 hover:border-gray-600 transition">
-                            {/* Tên rạp */}
-                            <div className="flex items-start gap-4 mb-5 border-b border-gray-700 pb-4">
-                               <div className="w-12 h-12 bg-gray-700 rounded-lg flex items-center justify-center shrink-0 border border-gray-600">
-                                  <MapPin size={24} className="text-yellow-500"/>
-                               </div>
-                               <div>
-                                  <h3 className="font-bold text-lg text-white group-hover:text-yellow-500 transition">{info?.name || "Cụm rạp"}</h3>
-                                  <p className="text-sm text-gray-400 mt-1">{info?.address || "Địa chỉ đang cập nhật"}</p>
-                               </div>
-                            </div>
-                            
-                            {/* List Giờ chiếu (ĐÃ CẬP NHẬT LOGIC ẨN GIỜ) */}
-                            <div>
-                               <span className="text-xs font-bold text-gray-500 mb-3 block uppercase tracking-wider">2D Phụ đề</span>
-                               <div className="flex flex-wrap gap-3">
-                                  {times
-                                    .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
-                                    .map(st => {
-                                      const now = new Date();
-                                      const startTime = new Date(st.startTime);
-                                      // Kiểm tra xem suất chiếu đã qua chưa
-                                      const isExpired = startTime <= now;
-
-                                      if (isExpired) {
-                                        return (
-                                          <span 
-                                            key={st._id} 
-                                            className="px-5 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-500 text-sm font-bold cursor-not-allowed select-none opacity-60"
-                                            title="Suất chiếu đã bắt đầu"
-                                          >
-                                            {startTime.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
-                                          </span>
-                                        );
-                                      }
-
-                                      return (
-                                        <Link 
-                                           key={st._id} 
-                                           to={`/booking/${st._id}`} 
-                                           className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm"
-                                        >
-                                           {startTime.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}
-                                        </Link>
-                                      );
-                                    })
-                                  }
-                               </div>
-                            </div>
-                         </div>
-                      )
-                   })
-                ) : (
-                   <div className="text-center py-12 bg-gray-800/50 rounded-xl border border-dashed border-gray-700 text-gray-500">
-                      <Calendar size={48} className="mx-auto mb-3 opacity-30"/>
-                      <p>Chưa có lịch chiếu nào cho ngày này.</p>
-                   </div>
-                )}
-             </div>
+            <h2 className="text-2xl font-bold mb-6 border-l-4 border-yellow-500 pl-3 text-white">Lịch Chiếu</h2>
+            <div className="flex gap-3 overflow-x-auto pb-4 mb-6 scrollbar-thin scrollbar-thumb-gray-700">
+              {getNext7Days().map((date, idx) => {
+                const isActive = formatDate(date) === formatDate(selectedDate);
+                const dayName = idx === 0 ? "Hôm nay" : `Thứ ${date.getDay() + 1 === 1 ? 'CN' : date.getDay() + 1}`;
+                return (
+                  <button key={idx} onClick={() => setSelectedDate(date)} className={`min-w-[80px] p-3 rounded-xl text-center transition border ${isActive ? "bg-yellow-500 text-black border-yellow-500 font-bold shadow-lg shadow-yellow-500/20" : "bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white"}`}>
+                    <div className="text-xs uppercase mb-1">{dayName}</div>
+                    <div className="text-xl font-bold">{date.getDate()}/{date.getMonth() + 1}</div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="space-y-4">
+              {Object.keys(groupedShowtimes).length > 0 ? (
+                Object.keys(groupedShowtimes).map(cinemaId => {
+                  const { info, times } = groupedShowtimes[cinemaId];
+                  return (
+                    <div key={cinemaId} className="bg-gray-800 rounded-xl p-6 border border-gray-700 hover:border-gray-600 transition">
+                      <div className="flex items-start gap-4 mb-5 border-b border-gray-700 pb-4">
+                        <div className="w-12 h-12 bg-gray-700 rounded-lg flex items-center justify-center shrink-0 border border-gray-600"><MapPin size={24} className="text-yellow-500" /></div>
+                        <div><h3 className="font-bold text-lg text-white group-hover:text-yellow-500 transition">{info?.name || "Cụm rạp"}</h3><p className="text-sm text-gray-400 mt-1">{info?.address || "Địa chỉ đang cập nhật"}</p></div>
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-gray-500 mb-3 block uppercase tracking-wider">2D Phụ đề</span>
+                        <div className="flex flex-wrap gap-3">
+                          {times.sort((a, b) => new Date(a.startTime) - new Date(b.startTime)).map(st => {
+                              const isExpired = new Date(st.startTime) <= new Date();
+                              if (isExpired) return (<span key={st._id} className="px-5 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-500 text-sm font-bold cursor-not-allowed select-none opacity-60">{new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>);
+                              return (<Link key={st._id} to={`/booking/${st._id}`} className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm">{new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Link>);
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (<div className="text-center py-12 bg-gray-800/50 rounded-xl border border-dashed border-gray-700 text-gray-500"><Calendar size={48} className="mx-auto mb-3 opacity-30" /><p>Chưa có lịch chiếu nào cho ngày này.</p></div>)}
+            </div>
           </section>
 
           {/* 3. Review Section */}
           <section>
-             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold border-l-4 border-yellow-500 pl-3 text-white">Bình Luận</h2>
-                <button className="text-yellow-500 hover:text-yellow-400 text-sm font-bold flex items-center gap-1">
-                   Viết đánh giá <ChevronRight size={16}/>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold border-l-4 border-yellow-500 pl-3 text-white">Bình Luận</h2>
+              
+              {/* 👇 LOGIC ẨN/HIỆN NÚT ĐÁNH GIÁ 👇 */}
+              {isReleased ? (
+                <button 
+                  onClick={handleOpenReview}
+                  className="text-yellow-500 hover:text-yellow-400 text-sm font-bold flex items-center gap-1 transition"
+                >
+                  Viết đánh giá <ChevronRight size={16} />
                 </button>
-             </div>
-             
-             <div className="space-y-4">
-                {reviews.length > 0 ? reviews.map((review, idx) => (
-                   <div key={idx} className="bg-gray-800 p-5 rounded-xl flex gap-4 border border-gray-700">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold text-white shrink-0 shadow-lg">
-                         {review.user?.name?.charAt(0) || <User size={20}/>}
+              ) : (
+                <span className="text-gray-500 text-sm italic border border-gray-600 px-3 py-1 rounded-full">
+                   Phim chưa công chiếu, chưa thể đánh giá
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {reviews.length > 0 ? reviews.map((review, idx) => (
+                <div key={idx} className="bg-gray-800 p-5 rounded-xl flex gap-4 border border-gray-700">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold text-white shrink-0 shadow-lg">
+                    {review.user?.name?.charAt(0) || <User size={20} />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-white">{review.user?.name || "Người dùng ẩn danh"}</span>
+                      <div className="flex text-yellow-500 text-xs gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} size={12} fill={i < (review.rating || 5) ? "currentColor" : "none"} className={i >= (review.rating || 5) ? "text-gray-600" : ""} />
+                        ))}
                       </div>
-                      <div>
-                         <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-white">{review.user?.name || "Người dùng ẩn danh"}</span>
-                            <div className="flex text-yellow-500 text-xs gap-0.5">
-                               {[...Array(5)].map((_, i) => (
-                                  <Star key={i} size={12} fill={i < (review.rating || 5) ? "currentColor" : "none"} className={i >= (review.rating || 5) ? "text-gray-600" : ""}/>
-                               ))}
-                            </div>
-                         </div>
-                         <p className="text-gray-300 text-sm leading-relaxed">{review.comment}</p>
-                         <span className="text-xs text-gray-500 mt-2 block">{new Date(review.createdAt).toLocaleDateString('vi-VN')}</span>
-                      </div>
-                   </div>
-                )) : (
-                   <div className="text-center py-8 text-gray-500 bg-gray-800/30 rounded-lg">
-                      Chưa có đánh giá nào. Hãy là người đầu tiên!
-                   </div>
-                )}
-             </div>
+                    </div>
+                    <p className="text-gray-300 text-sm leading-relaxed">{review.comment}</p>
+                    <span className="text-xs text-gray-500 mt-2 block">{new Date(review.createdAt).toLocaleDateString('vi-VN')}</span>
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-8 text-gray-500 bg-gray-800/30 rounded-lg">
+                  Chưa có đánh giá nào. Hãy là người đầu tiên!
+                </div>
+              )}
+            </div>
           </section>
 
         </div>
 
         {/* CỘT PHẢI: PHIM LIÊN QUAN */}
         <div className="hidden lg:block">
-           <div className="bg-gray-800 rounded-xl p-6 sticky top-24 border border-gray-700 shadow-xl">
-              <h3 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
-                 <Star size={20} className="text-yellow-500" fill="currentColor"/> Phim Đang Hot
-              </h3>
-              <div className="space-y-5">
-                 {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="flex gap-4 group cursor-pointer border-b border-gray-700 pb-4 last:border-0 last:pb-0">
-                       <div className="w-16 h-24 bg-gray-700 rounded-lg overflow-hidden shrink-0 shadow-md">
-                          <img src={`https://placehold.co/100x150?text=Phim+${i}`} alt="Related" className="w-full h-full object-cover group-hover:scale-110 transition duration-500"/>
-                       </div>
-                       <div>
-                          <h4 className="font-bold text-sm mb-1 text-white group-hover:text-yellow-500 transition line-clamp-2">Siêu Phẩm Hành Động {i}</h4>
-                          <p className="text-xs text-gray-500 mb-1">Hành động, Phiêu lưu</p>
-                          <span className="text-xs text-yellow-500 font-bold flex items-center gap-1">
-                             <Star size={10} fill="currentColor"/> 9.{i}
-                          </span>
-                       </div>
-                    </div>
-                 ))}
-              </div>
-              <Link to="/movies" className="block mt-6 text-center text-sm font-bold text-gray-400 hover:text-white border border-gray-600 rounded-lg py-3 hover:bg-gray-700 transition">
-                 Xem tất cả phim
-              </Link>
-           </div>
+          <div className="bg-gray-800 rounded-xl p-6 sticky top-24 border border-gray-700 shadow-xl">
+            <h3 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
+              <Star size={20} className="text-yellow-500" fill="currentColor" /> Phim Đang Hot
+            </h3>
+            <div className="space-y-5">
+              {relatedMovies.length > 0 ? relatedMovies.map(relMovie => (
+                <Link
+                  to={`/movie/${relMovie._id}`}
+                  key={relMovie._id}
+                  className="flex gap-4 group cursor-pointer border-b border-gray-700 pb-4 last:border-0 last:pb-0"
+                >
+                  <div className="w-16 h-24 bg-gray-700 rounded-lg overflow-hidden shrink-0 shadow-md">
+                    <img
+                      src={getImageUrl(relMovie.posterUrl)}
+                      alt={relMovie.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                      onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/100x150?text=No+Img"; }}
+                    />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm mb-1 text-white group-hover:text-yellow-500 transition line-clamp-2">
+                      {relMovie.title}
+                    </h4>
+                    <p className="text-xs text-gray-500 mb-1 line-clamp-1">
+                      {Array.isArray(relMovie.genre) ? relMovie.genre.join(", ") : relMovie.genre}
+                    </p>
+                    <span className="text-xs text-yellow-500 font-bold flex items-center gap-1">
+                      <Star size={10} fill="currentColor" /> {relMovie.realRating || 0}/5
+                    </span>
+                  </div>
+                </Link>
+              )) : (
+                <div className="text-gray-500 text-sm text-center">Đang cập nhật phim hot...</div>
+              )}
+            </div>
+            <Link to="/movies" className="block mt-6 text-center text-sm font-bold text-gray-400 hover:text-white border border-gray-600 rounded-lg py-3 hover:bg-gray-700 transition">
+              Xem tất cả phim
+            </Link>
+          </div>
         </div>
 
       </div>
+
+      {/* MODAL VIẾT REVIEW */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl border border-gray-700 p-6 relative animate-in zoom-in-95 duration-200">
+            <button onClick={() => setShowReviewModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition">
+              <X size={24} />
+            </button>
+            <h3 className="text-xl font-bold text-white mb-6 text-center">Đánh Giá Phim</h3>
+            <form onSubmit={handleSubmitReview} className="space-y-6">
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button key={star} type="button" onClick={() => setReviewForm({ ...reviewForm, rating: star })} className="transition transform hover:scale-110 active:scale-95">
+                    <Star size={32} className={star <= reviewForm.rating ? "text-yellow-500" : "text-gray-600"} fill={star <= reviewForm.rating ? "currentColor" : "none"}/>
+                  </button>
+                ))}
+              </div>
+              <p className="text-center text-sm text-yellow-500 font-medium">{reviewForm.rating === 5 ? "Tuyệt vời!" : reviewForm.rating === 4 ? "Rất hay" : reviewForm.rating === 3 ? "Bình thường" : "Tệ"}</p>
+              <div>
+                <textarea rows="4" placeholder="Chia sẻ cảm nghĩ của bạn về bộ phim này..." className="w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-white placeholder-gray-500 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition resize-none" value={reviewForm.comment} onChange={(e) => setReviewForm({ ...reviewForm, comment: e.target.value })}></textarea>
+              </div>
+              <button type="submit" disabled={submittingReview} className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition transform active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">
+                {submittingReview ? "Đang gửi..." : <><Send size={18} /> Gửi Đánh Giá</>}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
