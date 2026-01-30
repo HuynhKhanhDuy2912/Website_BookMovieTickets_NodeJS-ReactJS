@@ -1,167 +1,205 @@
 import React, { useEffect, useState, useRef } from "react";
 import io from "socket.io-client";
-import { Send, MessageSquare, User, UserCircle, Bell } from "lucide-react";
+import api from "../../api/axiosConfig"; // Gọi API để lấy tin nhắn cũ
+import { Send, MessageSquare, Bell, User } from "lucide-react";
 
 const socket = io.connect("http://localhost:5000");
 
 export default function AdminChat() {
-  const [onlineUsers, setOnlineUsers] = useState([]); // Danh sách user online (để check trạng thái xanh)
-  const [activeConversations, setActiveConversations] = useState([]); // Danh sách user ĐÃ NHẮN TIN
-  
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [allMessages, setAllMessages] = useState({}); 
-  const [unreadCounts, setUnreadCounts] = useState({}); // { "socketID": 5 }
-
+  // 1. STATE QUẢN LÝ DỮ LIỆU
+  const [conversations, setConversations] = useState([]); // List bên trái (Lấy từ DB)
+  const [onlineUsers, setOnlineUsers] = useState([]);     // List đang Online (Lấy từ Socket)
+  const [selectedUser, setSelectedUser] = useState(null); // User đang chat
+  const [messages, setMessages] = useState([]);           // Tin nhắn chi tiết
   const [inputMsg, setInputMsg] = useState("");
+  
   const messagesEndRef = useRef(null);
 
-  // --- 1. SETUP SOCKET ---
+  // 2. HELPER: CHECK ONLINE
+  // So sánh conversationId (ID trong DB) với socketId đang online
+  const isUserOnline = (convId) => onlineUsers.some(u => u.socketId === convId);
+
+  // 3. KHỞI TẠO (Load dữ liệu & Lắng nghe Socket)
   useEffect(() => {
+    // A. Gọi API lấy danh sách chat cũ (để không bị mất khi F5)
+    fetchConversations();
+
+    // B. Đăng ký Admin với Socket Server
     socket.emit("register_admin");
 
-    // A. Cập nhật danh sách Online (chỉ để biết ai đang sáng đèn)
+    // C. Lắng nghe danh sách Online (để hiện chấm xanh)
     socket.on("update_user_list", (userList) => {
       setOnlineUsers(userList);
     });
 
-    // B. NHẬN TIN NHẮN TỪ KHÁCH
+    // D. Lắng nghe tin nhắn mới từ khách
     socket.on("receive_from_client", (data) => {
-      const senderId = data.senderId;
-
-      // 1. Lưu tin nhắn
-      setAllMessages((prev) => ({
-        ...prev,
-        [senderId]: [...(prev[senderId] || []), { ...data, from: "client" }]
-      }));
-
-      // 2. Thêm vào danh sách cuộc trò chuyện (nếu chưa có)
-      setActiveConversations((prev) => {
-        const exists = prev.find(u => u.socketId === senderId);
-        if (!exists) {
-            // Tìm thông tin user trong list online để lấy tên (hoặc dùng tên gửi kèm data nếu backend có gửi)
-            // Ở đây mình tạm lấy từ data hoặc tạo user tạm
-            return [...prev, { socketId: senderId, username: "Khách hàng mới" }]; 
-        }
-        return prev;
-      });
-
-      // 3. Tăng số tin chưa đọc (NẾU KHÔNG PHẢI NGƯỜI ĐANG CHAT)
-      if (selectedUser?.socketId !== senderId) {
-          setUnreadCounts((prev) => ({
-              ...prev,
-              [senderId]: (prev[senderId] || 0) + 1
-          }));
+      // Nếu đang mở đúng khung chat của người này -> Đẩy tin nhắn vào luôn
+      if (selectedUser?.conversationId === data.senderId) {
+         setMessages(prev => [...prev, { ...data, sender: "client" }]);
+         markAsRead(data.senderId); 
       }
+
+      // Cập nhật Sidebar (Đưa lên đầu + Tăng số chưa đọc)
+      setConversations(prev => {
+        const others = prev.filter(c => c.conversationId !== data.senderId);
+        const existing = prev.find(c => c.conversationId === data.senderId);
+        
+        const newUnread = (selectedUser?.conversationId === data.senderId) 
+                          ? 0 
+                          : (existing ? existing.unread + 1 : 1);
+
+        const updatedUser = {
+           conversationId: data.senderId,
+           username: data.senderName || (existing ? existing.username : "Khách mới"),
+           lastMessage: data.message,
+           unread: newUnread
+        };
+        return [updatedUser, ...others];
+      });
     });
 
     return () => {
       socket.off("update_user_list");
       socket.off("receive_from_client");
     };
-  }, [selectedUser]); // Dependency selectedUser để check logic unread
+  }, [selectedUser]);
 
   // Auto Scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [allMessages, selectedUser]);
+  }, [messages]);
 
-  // --- 2. HÀNH ĐỘNG CHỌN USER ---
-  const handleSelectUser = (user) => {
-      setSelectedUser(user);
-      // Reset số tin chưa đọc về 0
-      setUnreadCounts((prev) => ({ ...prev, [user.socketId]: 0 }));
+  // 4. CÁC HÀM GỌI API (BACKEND)
+  const fetchConversations = async () => {
+    try {
+      const res = await api.get("/chat/conversations");
+      const formatted = res.data.map(c => ({
+         conversationId: c._id,
+         username: c.senderName || c._id, 
+         lastMessage: c.lastMessage,
+         unread: c.unreadCount
+      }));
+      setConversations(formatted);
+    } catch (err) {
+      console.error("Lỗi tải danh sách chat:", err);
+    }
   };
 
-  // --- 3. GỬI TIN ---
+  const fetchMessages = async (convId) => {
+    try {
+      const res = await api.get(`/chat/history/${convId}`);
+      setMessages(res.data);
+    } catch (err) {
+      console.error("Lỗi tải lịch sử chat:", err);
+    }
+  };
+
+  const markAsRead = async (convId) => {
+    try {
+      await api.put(`/chat/read/${convId}`);
+      // UI: Xóa số đỏ
+      setConversations(prev => prev.map(c => 
+         c.conversationId === convId ? { ...c, unread: 0 } : c
+      ));
+    } catch (err) {
+      console.error("Lỗi mark read:", err);
+    }
+  };
+
+  // 5. XỬ LÝ CHỌN USER
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
+    fetchMessages(user.conversationId); // Load tin cũ từ DB
+    markAsRead(user.conversationId);    // Đánh dấu đã đọc
+  };
+
+  // 6. GỬI TIN NHẮN
   const handleSend = (e) => {
     e.preventDefault();
     if (!inputMsg.trim() || !selectedUser) return;
 
     const msgData = {
       message: inputMsg,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     };
 
+    // Gửi Socket
     socket.emit("send_to_client", {
-      toSocketId: selectedUser.socketId,
+      toSocketId: selectedUser.conversationId,
       ...msgData
     });
 
-    setAllMessages((prev) => ({
-      ...prev,
-      [selectedUser.socketId]: [...(prev[selectedUser.socketId] || []), { ...msgData, from: "admin" }]
-    }));
+    // Cập nhật UI Chat
+    setMessages(prev => [...prev, { text: inputMsg, sender: "admin", createdAt: new Date() }]);
+    
+    // Cập nhật UI Sidebar (Đưa lên đầu)
+    setConversations(prev => {
+        const others = prev.filter(c => c.conversationId !== selectedUser.conversationId);
+        const updatedUser = { 
+           ...selectedUser, 
+           lastMessage: "Bạn: " + inputMsg, 
+           unread: 0 
+        };
+        return [updatedUser, ...others];
+    });
 
     setInputMsg("");
   };
 
-  // Helper: Check user có online không
-  const isUserOnline = (socketId) => onlineUsers.some(u => u.socketId === socketId);
-
-  // Helper: Merge danh sách hiển thị
-  // (Hiển thị tất cả user trong activeConversations + Cập nhật info từ onlineUsers nếu có)
-  const displayList = activeConversations.map(conv => {
-      const onlineInfo = onlineUsers.find(u => u.socketId === conv.socketId);
-      return onlineInfo ? onlineInfo : conv; // Ưu tiên lấy info mới nhất (username) từ online list
-  });
-
   return (
     <div className="flex h-[calc(100vh-80px)] bg-gray-100 p-4 gap-4">
       
-      {/* === CỘT TRÁI: DANH SÁCH CUỘC TRÒ CHUYỆN === */}
+      {/* === CỘT TRÁI: DANH SÁCH USER === */}
       <div className="w-1/4 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
         <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
            <h3 className="font-bold text-gray-700 flex items-center gap-2">
-             <MessageSquare className="text-blue-600" size={20}/> Tin Nhắn ({displayList.length})
+             <MessageSquare className="text-blue-600" size={20}/> Tin Nhắn ({conversations.length})
            </h3>
         </div>
         
         <div className="flex-1 overflow-y-auto">
-          {displayList.length === 0 ? (
+          {conversations.length === 0 ? (
              <div className="text-center text-gray-400 mt-10">
                 <Bell size={40} className="mx-auto mb-2 opacity-20"/>
                 <p className="text-sm">Chưa có tin nhắn nào.</p>
              </div>
           ) : (
-             displayList.map(u => {
-                const unread = unreadCounts[u.socketId] || 0;
-                const lastMsg = allMessages[u.socketId]?.slice(-1)[0]?.message || "Bắt đầu chat...";
-                
+             conversations.map(u => {
+                const isOnline = isUserOnline(u.conversationId);
                 return (
                    <div 
-                     key={u.socketId}
-                     onClick={() => handleSelectUser(u)}
-                     className={`p-4 border-b cursor-pointer hover:bg-blue-50 transition flex items-center gap-3 relative ${
-                        selectedUser?.socketId === u.socketId ? "bg-blue-100 border-l-4 border-l-blue-600" : ""
-                     }`}
+                      key={u.conversationId}
+                      onClick={() => handleSelectUser(u)}
+                      className={`p-4 border-b cursor-pointer hover:bg-blue-50 transition flex items-center gap-3 relative ${
+                         selectedUser?.conversationId === u.conversationId ? "bg-blue-100 border-l-4 border-l-blue-600" : ""
+                      }`}
                    >
+                      {/* Avatar + Chấm xanh */}
                       <div className="relative">
                          <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center font-bold text-gray-600 text-lg">
                             {(u.username || "K").charAt(0).toUpperCase()}
                          </div>
-                         {/* Chấm xanh Online */}
-                         {isUserOnline(u.socketId) && (
+                         {isOnline && (
                             <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></span>
                          )}
                       </div>
                       
                       <div className="flex-1 min-w-0">
                          <div className="flex justify-between items-center mb-1">
-                            <h4 className={`font-bold text-sm truncate ${unread > 0 ? "text-black" : "text-gray-700"}`}>
-                                {u.username || "Khách hàng"}
+                            <h4 className={`font-bold text-sm truncate ${u.unread > 0 ? "text-black" : "text-gray-700"}`}>
+                               {u.username.substring(0, 15)}...
                             </h4>
-                            {/* Thời gian tin cuối (Optional) */}
-                            {/* <span className="text-[10px] text-gray-400">12:30</span> */}
                          </div>
-                         <p className={`text-xs truncate ${unread > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
-                            {lastMsg}
+                         <p className={`text-xs truncate ${u.unread > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
+                            {u.lastMessage}
                          </p>
                       </div>
 
                       {/* Badge số tin chưa đọc */}
-                      {unread > 0 && (
+                      {u.unread > 0 && (
                          <div className="absolute right-4 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm animate-pulse">
-                            {unread}
+                            {u.unread}
                          </div>
                       )}
                    </div>
@@ -171,34 +209,34 @@ export default function AdminChat() {
         </div>
       </div>
 
-      {/* === CỘT PHẢI: KHUNG CHAT (Giữ nguyên logic cũ) === */}
+      {/* === CỘT PHẢI: KHUNG CHAT === */}
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
          {selectedUser ? (
             <>
                <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm z-10">
                   <div className="flex items-center gap-3">
                      <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                        {(selectedUser.username || "K").charAt(0)}
+                        {(selectedUser.username || "K").charAt(0).toUpperCase()}
                      </div>
                      <div>
-                        <h3 className="font-bold text-gray-800">{selectedUser.username || "Khách hàng"}</h3>
-                        <span className={`text-xs flex items-center gap-1 ${isUserOnline(selectedUser.socketId) ? "text-green-600" : "text-gray-400"}`}>
-                           ● {isUserOnline(selectedUser.socketId) ? "Đang hoạt động" : "Offline"}
+                        <h3 className="font-bold text-gray-800">{selectedUser.username}</h3>
+                        <span className={`text-xs flex items-center gap-1 ${isUserOnline(selectedUser.conversationId) ? "text-green-600" : "text-gray-400"}`}>
+                           ● {isUserOnline(selectedUser.conversationId) ? "Đang hoạt động" : "Offline"}
                         </span>
                      </div>
                   </div>
                </div>
 
                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-                  {(allMessages[selectedUser.socketId] || []).map((msg, idx) => {
-                     const isMe = msg.from === "admin";
+                  {messages.map((msg, idx) => {
+                     const isMe = msg.sender === "admin" || msg.from === "admin"; // Check cả 2 trường hợp data
                      return (
                         <div key={idx} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                           <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm shadow-sm ${
+                           <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm shadow-sm break-words ${
                               isMe ? "bg-blue-600 text-white rounded-br-none" : "bg-white border text-gray-800 rounded-bl-none"
                            }`}>
-                              <p>{msg.message}</p>
-                              <p className={`text-[10px] mt-1 ${isMe ? "text-blue-200" : "text-gray-400"}`}>{msg.time}</p>
+                              <p>{msg.text || msg.message}</p>
+                              {/* <p className={`text-[10px] mt-1 ${isMe ? "text-blue-200" : "text-gray-400"}`}>{msg.time || msg.createdAt}</p> */}
                            </div>
                         </div>
                      )

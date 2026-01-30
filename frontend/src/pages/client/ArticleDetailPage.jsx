@@ -9,6 +9,58 @@ export default function ArticleDetailPage() {
   const [relatedArticles, setRelatedArticles] = useState([]); // Bài viết liên quan
   const [loading, setLoading] = useState(true);
 
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareData = {
+      title: article.title,
+      text: `Đọc bài viết "${article.title}" tại Cinema Web nè!`,
+      url: url,
+    };
+
+    try {
+      // ƯU TIÊN 1: Share xịn trên điện thoại (Zalo, Mess...)
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      // ƯU TIÊN 2: Copy bằng API hiện đại (Chỉ chạy trên HTTPS/Localhost)
+      try {
+        await navigator.clipboard.writeText(url);
+        alert("✅ Đã sao chép liên kết!");
+      } catch (err) {
+        throw new Error("Clipboard API failed"); // Ném lỗi để nhảy xuống fallback
+      }
+
+    } catch (err) {
+      // ƯU TIÊN 3: CHIÊU CUỐI (Fallback thủ công - Chạy mọi lúc mọi nơi)
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = url;
+        
+        // Giấu nó đi nhưng vẫn để nó thuộc về trang web
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        
+        // Chọn và Copy
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea); // Xóa sau khi dùng xong
+
+        if (successful) {
+             alert("✅ Đã sao chép liên kết (Fallback)!");
+        } else {
+             alert("❌ Không thể sao chép, hãy copy thủ công từ thanh địa chỉ.");
+        }
+      } catch (fallbackErr) {
+        console.error("Lỗi chia sẻ:", fallbackErr);
+        alert("❌ Lỗi không xác định khi chia sẻ.");
+      }
+    }
+  };
+  
   useEffect(() => {
     const fetchDetail = async () => {
       try {
@@ -71,7 +123,7 @@ export default function ArticleDetailPage() {
               <span className="flex items-center gap-2">
                  <Clock size={16} className="text-yellow-500"/> 5 phút đọc
               </span>
-              <button className="ml-auto flex items-center gap-2 text-blue-400 hover:text-blue-300 transition">
+              <button onClick={handleShare} className="ml-auto flex items-center gap-2 text-blue-400 hover:text-blue-300 transition">
                  <Share2 size={16}/> Chia sẻ
               </button>
            </div>
@@ -107,7 +159,7 @@ export default function ArticleDetailPage() {
                     {relatedArticles.map(item => (
                        <Link key={item._id} to={`/articles/${item._id}`} className="group flex gap-3 items-start">
                           <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0">
-                             <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition"/>
+                             <img src={item.image} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition"/>
                           </div>
                           <div>
                              <h4 className="font-bold text-sm line-clamp-2 group-hover:text-yellow-400 transition mb-1">
