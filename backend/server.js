@@ -4,7 +4,7 @@ const cors = require("cors");
 const connectDB = require("./config/db");
 const http = require("http");
 const { Server } = require("socket.io");
-const Message = require("./models/Message"); // 👈 QUAN TRỌNG: Import Model để lưu tin nhắn
+const Message = require("./models/Message");
 
 dotenv.config();
 connectDB();
@@ -39,39 +39,51 @@ const io = new Server(server, {
   },
 });
 
-let activeUsers = []; // Lưu danh sách user đang online (Optional)
+let activeUsers = [];
 
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // 1. User/Guest đăng nhập vào chat
-  socket.on("register_user", (username) => {
+  // 👇 1. [MỚI THÊM] QUAN TRỌNG: Cho phép socket tham gia vào phòng chat riêng
+  // Nếu không có đoạn này, io.to(conversationId) sẽ gửi vào hư không
+  socket.on("join_conversation", (conversationId) => {
+    socket.join(conversationId);
+    console.log(`Socket ${socket.id} đã tham gia phòng: ${conversationId}`);
+  });
+
+  // 2. User/Guest đăng nhập (Logic hiển thị Online)
+  socket.on("register_user", (data) => { // 👈 Sửa tham số nhận vào là object data
+    // Client sẽ gửi lên: { username: "Tên", conversationId: "guest_..." }
+    const { username, conversationId } = data;
+
     const existingUser = activeUsers.find((u) => u.socketId === socket.id);
     if (!existingUser) {
-      activeUsers.push({ socketId: socket.id, username, role: "client" });
+      // 👇 LƯU THÊM conversationId VÀO DANH SÁCH ONLINE
+      activeUsers.push({
+        socketId: socket.id,
+        username,
+        conversationId: conversationId, // <--- Quan trọng
+        role: "client"
+      });
     }
-    // Gửi danh sách user online cho Admin (nếu cần hiển thị ai đang onl)
+
     io.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
     console.log("User Registered:", username);
   });
 
-  // 2. Admin đăng nhập vào chat
+  // 3. Admin đăng nhập
   socket.on("register_admin", () => {
-    // Admin join thì gửi ngay danh sách user đang onl cho Admin
     socket.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
   });
 
-  // 3. KHÁCH GỬI TIN CHO ADMIN (Có lưu DB)
-// 3. KHÁCH GỬI TIN CHO ADMIN
+  // 4. KHÁCH GỬI TIN CHO ADMIN
   socket.on("send_to_admin", async (data) => {
-    // 👇 Lấy conversationId và username từ client gửi lên
-    const { message, time, conversationId, username } = data; 
+    const { message, time, conversationId, username } = data;
 
     try {
       // A. Lưu vào MongoDB
       const newMessage = new Message({
-        // 👇 QUAN TRỌNG: Dùng conversationId cố định, KHÔNG dùng socket.id nữa
-        conversationId: conversationId || socket.id, 
+        conversationId: conversationId || socket.id,
         sender: "client",
         senderName: username || "Khách ẩn danh",
         text: message
@@ -80,8 +92,7 @@ io.on("connection", (socket) => {
 
       // B. Gửi Real-time cho Admin
       io.emit("receive_from_client", {
-        // 👇 Gửi ID cố định này cho Admin để Admin biết ai là ai
-        senderId: conversationId || socket.id, 
+        senderId: conversationId || socket.id,
         senderName: username,
         message: message,
         time: time
@@ -91,21 +102,22 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 4. ADMIN TRẢ LỜI KHÁCH (Có lưu DB)
+  // 5. ADMIN TRẢ LỜI KHÁCH
   socket.on("send_to_client", async ({ toSocketId, message, time }) => {
     try {
       console.log(`Admin reply to ${toSocketId}: ${message}`);
 
       // A. Lưu vào MongoDB
       const newMessage = new Message({
-        conversationId: toSocketId, // Lưu vào cuộc trò chuyện của khách đó
+        conversationId: toSocketId,
         sender: "admin",
         text: message,
-        isRead: true // Admin nhắn thì coi như đã xem
+        isRead: true
       });
       await newMessage.save();
 
-      // B. Gửi Real-time tới ĐÚNG ông khách đó
+      // B. Gửi Real-time tới ĐÚNG phòng (Room) đó
+      // Vì Client đã join room 'toSocketId' ở bước 1, nên sẽ nhận được ngay
       io.to(toSocketId).emit("receive_from_admin", {
         message,
         time,
@@ -116,7 +128,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 5. Ngắt kết nối
+  // 6. Ngắt kết nối
   socket.on("disconnect", () => {
     activeUsers = activeUsers.filter((u) => u.socketId !== socket.id);
     io.emit("update_user_list", activeUsers.filter(u => u.role === "client"));
