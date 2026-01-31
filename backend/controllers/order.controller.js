@@ -6,90 +6,78 @@ const Combo = require("../models/Combo");
 // --- 1. TẠO ĐƠN HÀNG MỚI (CÓ LOGIC TÍNH GIÁ VIP) ---
 exports.createOrder = async (req, res) => {
   try {
-    console.log("---------------- START CREATE ORDER (VIP LOGIC) ----------------");
-    const { showtimeId, seats, combos, paymentMethod } = req.body;
-    const userId = req.user ? req.user._id : req.body.userId;
+    console.log("---------------- START CREATE ORDER (FIXED SCHEMA) ----------------");
+    const { showtimeId, seats, combos, paymentMethod, guestName } = req.body;
+    
+    // 1. Xử lý User ID (Cho phép null)
+    const userId = (req.user && req.user._id) ? req.user._id : (req.body.userId || null);
 
     // A. LẤY THÔNG TIN SHOWTIME VÀ ROOM
-    // Populate 'room' để lấy cấu hình ghế VIP
     const showtimeData = await Showtime.findById(showtimeId).populate("room");
     if (!showtimeData) return res.status(404).json({ message: "Suất chiếu không tồn tại!" });
 
     const roomData = showtimeData.room;
     if (!roomData) return res.status(404).json({ message: "Dữ liệu phòng chiếu bị lỗi!" });
 
-    // Cấu hình giá
-    const basePrice = Number(showtimeData.price) || 50000; // Giá gốc (Standard)
-    const vipSurcharge = 20000; // Phụ thu ghế VIP (Có thể thay đổi hoặc lấy từ DB nếu có config)
-
-    console.log(`🎫 Giá gốc: ${basePrice} | Phụ thu VIP: ${vipSurcharge}`);
+    const basePrice = Number(showtimeData.price) || 50000; 
+    const vipSurcharge = 20000; 
 
     // B. KIỂM TRA GHẾ TRÙNG
-    const existingTickets = await Ticket.find({ showtime: showtimeId, seatNumber: { $in: seats } });
-    if (existingTickets.length > 0) return res.status(400).json({ message: "Ghế đã có người đặt!" });
-
-    // C. TÍNH TIỀN VÉ & XÁC ĐỊNH LOẠI GHẾ
-    let ticketTotal = 0;
-    const processedTickets = []; // Mảng vé chi tiết để lưu vào Order & Ticket collection
-
-    // Duyệt qua từng ghế khách chọn
     const seatList = Array.isArray(seats) ? seats : [];
+    if (seatList.length === 0) return res.status(400).json({ message: "Vui lòng chọn ghế!" });
+
+    // Logic kiểm tra trùng khớp với POS: Check mảng seats
+    const existingTickets = await Ticket.find({ 
+        showtime: showtimeId, 
+        status: { $ne: "cancelled" },
+        seats: { $in: seatList } 
+    });
+    
+    if (existingTickets.length > 0) {
+        const takenSeats = existingTickets.flatMap(t => t.seats).filter(s => seatList.includes(s));
+        return res.status(400).json({ message: `Ghế ${takenSeats.join(", ")} đã có người đặt!` });
+    }
+
+    // C. TÍNH TIỀN VÉ
+    let ticketTotal = 0;
+    const processedTickets = []; 
 
     for (const seatLabel of seatList) {
-      // Tìm thông tin ghế trong cấu hình Room
-      // (Room lưu seats dạng [{ seatNumber: "A1", type: "vip" }, ...])
-      const seatConfig = roomData.seats.find(s => s.seatNumber === seatLabel);
-
+      const seatConfig = roomData.seats ? roomData.seats.find(s => s.seatNumber === seatLabel) : null;
       let finalPrice = basePrice;
       let seatType = "standard";
 
-      // Nếu tìm thấy ghế trong config và nó là VIP -> Tính giá VIP
       if (seatConfig && seatConfig.type === "vip") {
         finalPrice = basePrice + vipSurcharge;
         seatType = "vip";
       }
 
       ticketTotal += finalPrice;
-
-      // Lưu chi tiết từng vé
-      processedTickets.push({
-        seatNumber: seatLabel,
-        type: seatType,
-        price: finalPrice
-      });
+      processedTickets.push({ seatNumber: seatLabel, type: seatType, price: finalPrice });
     }
-
-    console.log(`➕ Tổng tiền vé (${seatList.length} ghế): ${ticketTotal}`);
 
     // D. TÍNH TIỀN COMBO
     let comboTotal = 0;
     const processedCombos = [];
     if (combos && Array.isArray(combos)) {
       for (const item of combos) {
-        const comboDb = await Combo.findById(item.comboId || item._id);
+        const comboId = item.comboId || item._id;
+        if (!comboId) continue;
+        const comboDb = await Combo.findById(comboId);
         if (comboDb) {
           const qty = parseInt(item.quantity) || 0;
           const price = Number(comboDb.price) || 0;
-
           if (qty > 0) {
             comboTotal += price * qty;
-            processedCombos.push({
-              comboId: comboDb._id, name: comboDb.name, quantity: qty, price: price
-            });
+            processedCombos.push({ comboId: comboDb._id, name: comboDb.name, quantity: qty, price: price });
           }
         }
       }
     }
-    console.log(`➕ Tổng tiền Combo: ${comboTotal}`);
 
-    // E. TỔNG TIỀN CUỐI CÙNG
+    // E. TỔNG TIỀN
     let finalTotal = ticketTotal + comboTotal;
-    if (isNaN(finalTotal) || finalTotal < 0) {
-      console.error("⚠️ Lỗi tính toán! Reset về 0.");
-      finalTotal = 0;
-    }
-
-    console.log(`💰 TỔNG ĐƠN HÀNG: ${finalTotal}`);
+    if (isNaN(finalTotal)) finalTotal = 0;
 
     // F. LƯU ĐƠN HÀNG (ORDER)
     const orderCode = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -97,40 +85,44 @@ exports.createOrder = async (req, res) => {
       user: userId,
       showtime: showtimeId,
       orderCode: orderCode,
-
-      // Lưu mảng vé chi tiết (đã có type vip/standard)
-      tickets: processedTickets,
-
-      // Vẫn lưu mảng seats string để tương thích ngược hoặc query nhanh
+      tickets: processedTickets, // Lưu chi tiết để hiển thị trong lịch sử
       seats: seatList,
-
       totalPrice: finalTotal,
       paymentMethod: paymentMethod || "Cash",
-      status: "success",
+      status: "success", // Giả sử thanh toán luôn thành công
       combos: processedCombos
     });
 
-    // G. LƯU VÉ (TICKET COLLECTION)
-    if (processedTickets.length > 0) {
-      const ticketsToSave = processedTickets.map(t => ({
+    // G. LƯU VÉ (TICKET COLLECTION) - 👇 ĐÃ SỬA LẠI CHO KHỚP SCHEMA MỚI 👇
+    // Thay vì insertMany vé lẻ, ta tạo 1 Ticket gộp (giống POS)
+    if (seatList.length > 0) {
+      await Ticket.create({
         movie: showtimeData.movie,
         showtime: showtimeId,
         user: userId,
-        order: newOrder._id,
-        seatNumber: t.seatNumber,
-        type: t.type,       // Lưu loại ghế
-        price: t.price,     // Lưu giá vé cụ thể của ghế này
-        status: "booked"
-      }));
-      await Ticket.insertMany(ticketsToSave);
+        guestName: guestName || "Khách Online",
+        order: newOrder._id, // Link tới Order
+        
+        seats: seatList,         // ✅ Đúng Schema: Mảng ghế ["A1", "A2"]
+        totalPrice: ticketTotal, // ✅ Đúng Schema: Tổng tiền vé
+        
+        status: "booked", 
+        paymentStatus: "paid",   // Vì Order success nên Ticket là paid
+        isManual: false
+      });
     }
 
-    // H. SOCKET REAL-TIME
+    // H. SOCKET REAL-TIME (Đồng bộ với Admin POS)
     if (req.io) {
-      seatList.forEach(seatLabel => req.io.to(showtimeId).emit("seat_sold", seatLabel));
+        req.io.to(showtimeId.toString()).emit("seat_sold", seatList);
+    }
+    
+    // Xóa timer giữ ghế nếu có
+    if (req.clearSeatHold) {
+        req.clearSeatHold(showtimeId.toString(), seatList);
     }
 
-    res.status(201).json({ success: true, order: newOrder });
+    res.status(201).json({ success: true, message: "Đặt vé thành công", order: newOrder });
     console.log("---------------- END CREATE ORDER ----------------");
 
   } catch (err) {

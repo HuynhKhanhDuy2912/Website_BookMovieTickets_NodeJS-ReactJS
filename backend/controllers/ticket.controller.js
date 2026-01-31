@@ -2,60 +2,63 @@ const Ticket = require("../models/Ticket");
 const Showtime = require("../models/Showtime");
 const User = require("../models/User");
 
-// 1. TẠO VÉ MỚI (Dùng cho Admin hoặc test lẻ)
-// Lưu ý: Nếu hệ thống đặt vé chính nằm ở orderController, bạn nhớ copy logic req.io sang bên đó nữa nhé!
+// 1. TẠO VÉ MỚI (Dùng cho POS/Admin bán vé)
 exports.createTicket = async (req, res) => {
   try {
-    // 1. Nhận đúng dữ liệu từ Frontend (POS)
     const { showtime, seats, user, guestName, totalPrice, paymentStatus, isManual } = req.body;
 
-    console.log("📦 Dữ liệu nhận được:", req.body); // Log ra để debug
+    console.log("📦 [POS] Đang tạo vé:", req.body);
 
-    // 2. Validate dữ liệu đầu vào
+    // 1. Validate
     if (!showtime || !seats || seats.length === 0) {
       return res.status(400).json({ message: "Vui lòng chọn suất chiếu và ghế." });
     }
 
-    // 3. Kiểm tra xem các ghế này đã bị ai mua chưa
+    // 2. Check trùng ghế trong DB
     const existingTickets = await Ticket.find({
       showtime,
-      status: { $ne: "cancelled" }, // Bỏ qua vé đã hủy
-      // Kiểm tra xem trong mảng ghế đã bán có chứa bất kỳ ghế nào khách đang chọn không
+      status: { $ne: "cancelled" },
       seats: { $in: seats } 
     });
 
     if (existingTickets.length > 0) {
-      // Tìm ra ghế nào bị trùng để báo lỗi chi tiết
       const takenSeats = existingTickets.flatMap(t => t.seats).filter(s => seats.includes(s));
-      return res.status(400).json({ message: `Ghế ${takenSeats.join(", ")} đã có người đặt rồi!` });
+      return res.status(400).json({ message: `Ghế ${takenSeats.join(", ")} vừa có người khác đặt xong!` });
     }
 
-    // 4. Tạo vé mới (Lưu mảng ghế)
+    // 3. Tạo Vé
     const ticket = new Ticket({
-      user: user || null, // Nếu null thì lưu null (Khách vãng lai)
+      user: user || null,
       guestName: guestName || "Khách vãng lai",
       showtime,
-      seats: seats, // Lưu cả mảng ["A1", "A2"] vào 1 vé duy nhất
-      totalPrice: totalPrice || 0, // Frontend đã tính toán rồi
+      seats, // Lưu mảng ghế
+      totalPrice: totalPrice || 0,
       paymentStatus: paymentStatus || "unpaid",
-      status: "success", // Bán tại quầy thì mặc định là thành công
-      isManual: isManual || false // Đánh dấu vé POS
+      status: "success",
+      isManual: isManual || false
     });
 
     await ticket.save();
 
-    // 5. Cập nhật lịch sử mua vé cho User (Nếu là thành viên)
+    // 4. Update lịch sử mua của User (nếu có)
     if (user) {
         await User.findByIdAndUpdate(user, { $push: { tickets: ticket._id } });
     }
 
-    // 🔥 [SOCKET REAL-TIME]: Báo cho tất cả client khác biết ghế đã bán
+    // 5. 🔥 SOCKET REAL-TIME (QUAN TRỌNG NHẤT)
     if (req.io) {
-        // Emit danh sách ghế vừa bán để các máy khác cập nhật thành màu đỏ
-        seats.forEach(seat => {
-            req.io.to(showtime).emit("seat_sold", seat);
-        });
-        console.log(`📡 Socket emitted: Sold seats [${seats}] for showtime ${showtime}`);
+        // Ép kiểu showtime sang String để đảm bảo đúng Room ID
+        const showtimeRoom = showtime.toString(); 
+
+        // Gửi sự kiện 'seat_sold' kèm MẢNG ghế vừa bán
+        req.io.to(showtimeRoom).emit("seat_sold", seats);
+        
+        console.log(`📡 Socket emitted: seat_sold ${JSON.stringify(seats)} to room ${showtimeRoom}`);
+    }
+
+    // 6. Xóa Timer giữ ghế (nếu đang giữ) để tránh tự nhả ghế sau 5p
+    if (req.clearSeatHold) {
+        req.clearSeatHold(showtime.toString(), seats);
     }
 
     res.status(201).json({ message: "Xuất vé thành công", ticket });
@@ -66,7 +69,7 @@ exports.createTicket = async (req, res) => {
   }
 };
 
-// 2. LẤY VÉ CỦA TÔI (Profile)
+// 2. LẤY VÉ CỦA TÔI
 exports.getMyTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find({ user: req.user._id })
@@ -122,38 +125,44 @@ exports.getTicketById = async (req, res) => {
   }
 };
 
-// 5. CẬP NHẬT VÉ (Admin/Staff)
+// 5. CẬP NHẬT VÉ
 exports.updateTicket = async (req, res) => {
   try {
-    const { seatNumber, price, status } = req.body;
-
+    const { seats, price, status } = req.body;
     const ticket = await Ticket.findByIdAndUpdate(
       req.params.id,
-      { seatNumber, price, status },
+      { seats, price, status },
       { new: true }
     );
-
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-
     res.status(200).json({ message: "Ticket updated successfully", ticket });
   } catch (error) {
     res.status(500).json({ message: "Error updating ticket", error: error.message });
   }
 };
 
-// 6. XÓA VÉ (Admin xóa vé -> Ghế phải trống lại)
+// 6. XÓA VÉ
 exports.deleteTicket = async (req, res) => {
   try {
     const ticket = await Ticket.findByIdAndDelete(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // 🔥 [SOCKET REAL-TIME]: Admin xóa vé -> Báo ghế này đã trống (seat_released)
-    // Để frontend cập nhật lại màu trắng (hoặc bỏ màu xám)
+    // SOCKET: Báo ghế trống lại
     if (req.io) {
-        // Cần toString() showtime ID để room socket nhận diện đúng
-        const showtimeId = ticket.showtime.toString(); 
-        req.io.to(showtimeId).emit("seat_released", ticket.seatNumber);
-        console.log(`📡 Socket emitted: seat_released ${ticket.seatNumber} (Ticket Deleted)`);
+        const showtimeRoom = ticket.showtime.toString(); 
+        
+        // Xử lý nếu ticket lưu mảng ghế
+        if (ticket.seats && ticket.seats.length > 0) {
+             ticket.seats.forEach(seat => {
+                 req.io.to(showtimeRoom).emit("seat_released", seat);
+             });
+        } 
+        // Fallback cho ticket cũ lưu seatNumber
+        else if (ticket.seatNumber) { 
+             req.io.to(showtimeRoom).emit("seat_released", ticket.seatNumber);
+        }
+        
+        console.log(`📡 Socket emitted: seat_released [${ticket.seats || ticket.seatNumber}]`);
     }
 
     res.status(200).json({ message: "Ticket deleted successfully" });
@@ -162,14 +171,16 @@ exports.deleteTicket = async (req, res) => {
   }
 };
 
-// 7. LẤY DANH SÁCH GHẾ ĐÃ BÁN
+// 7. LẤY DANH SÁCH GHẾ ĐÃ BÁN (Dùng cho Client load ban đầu)
 exports.getTicketsByShowtime = async (req, res) => {
   try {
     const { showtimeId } = req.params;
+    
+    // Chỉ lấy vé trạng thái hợp lệ
     const tickets = await Ticket.find({ 
       showtime: showtimeId,
-      status: { $in: ["booked", "sold", "active"] } 
-    }).select("seatNumber"); 
+      status: { $in: ["booked", "sold", "active", "success"] } 
+    }).select("seats seatNumber"); // Lấy cả 2 trường để Frontend tự gộp
 
     res.json(tickets);
   } catch (err) {
