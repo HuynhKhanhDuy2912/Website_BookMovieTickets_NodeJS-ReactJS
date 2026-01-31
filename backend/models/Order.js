@@ -2,31 +2,23 @@ const mongoose = require("mongoose");
 
 const orderSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    // Liên kết với suất chiếu
-    showtime: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Showtime",
-      required: true,
-    },
-    orderCode: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    // 👇 QUAN TRỌNG: Phải có dòng này thì mới lưu được danh sách ghế (Mảng chuỗi)
-    seats: [String], 
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    showtime: { type: mongoose.Schema.Types.ObjectId, ref: "Showtime", required: true },
+    orderCode: { type: String, required: true, unique: true },
 
-    // 👇 QUAN TRỌNG: Phải có dòng này thì mới lưu được Tổng tiền (Tránh NaN)
-    totalPrice: {
-      type: Number,
-      required: true,
-      default: 0
-    },
+    // 👇 QUAN TRỌNG: Phải khai báo là mảng Object, KHÔNG ĐƯỢC để [String]
+    tickets: [
+      {
+        seatNumber: { type: String }, 
+        type: { type: String, default: 'standard' },       
+        price: { type: Number }       
+      }
+    ],
+
+    // Vẫn giữ seats mảng string để tương thích ngược nếu cần
+    seats: [String],
+
+    totalPrice: { type: Number, required: true, default: 0 },
     paymentMethod: {
       type: String,
       enum: ["Momo", "ZaloPay", "VNPAY", "ATM", "Card", "Cash"],
@@ -37,7 +29,6 @@ const orderSchema = new mongoose.Schema(
       enum: ["pending", "success", "failed", "cancelled"],
       default: "pending",
     },
-    // Lưu danh sách combo (nếu có)
     combos: [
       {
         comboId: { type: mongoose.Schema.Types.ObjectId, ref: "Combo" },
