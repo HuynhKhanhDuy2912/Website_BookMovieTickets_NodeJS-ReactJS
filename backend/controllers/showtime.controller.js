@@ -7,7 +7,7 @@ exports.getAllShowtimes = async (req, res) => {
       .populate("movie", "title duration")
       .populate("cinema", "name city")
       // ✅ Lấy vipRows để hiển thị nhanh danh sách nếu cần
-      .populate("room", "name seatCount vipRows"); 
+      .populate("room", "name seatCount vipRows rows cols"); 
       
     res.json(showtimes);
   } catch (err) {

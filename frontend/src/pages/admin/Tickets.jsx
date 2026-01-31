@@ -26,7 +26,7 @@ export default function Tickets() {
   const [bookedSeats, setBookedSeats] = useState([]);
   
   // Cấu hình phụ thu VIP
-  const VIP_SURCHARGE = 10000; // Cộng thêm 10k
+  const VIP_SURCHARGE = 20000;
 
   // Form State
   const [formData, setFormData] = useState({
@@ -229,30 +229,44 @@ export default function Tickets() {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
   };
 
-  // --- SƠ ĐỒ GHẾ (CÓ HIỂN THỊ VIP) ---
+  // --- SƠ ĐỒ GHẾ (ĐÃ SỬA ĐỂ DYNAMIC THEO DATA PHÒNG) ---
   const renderSeatMap = () => {
-     if (!formData.showtime) return <div className="text-gray-400 text-sm italic p-4 text-center border rounded bg-gray-50">Vui lòng chọn suất chiếu để xem sơ đồ ghế</div>;
-     
-     // Cố định mẫu 5x8 (Thực tế nên lấy row/col từ selectedShowtime.room.rows/cols)
-     const rows = ['A', 'B', 'C', 'D', 'E']; 
-     const cols = [1, 2, 3, 4, 5, 6, 7, 8];
+      if (!formData.showtime) return <div className="text-gray-400 text-sm italic p-4 text-center border rounded bg-gray-50">Vui lòng chọn suất chiếu để xem sơ đồ ghế</div>;
+      
+      // 1. Tìm suất chiếu và thông tin phòng
+      const selectedShowtime = showtimes.find(s => s._id === formData.showtime);
+      
+      // Safety check: Nếu chưa load xong hoặc dữ liệu lỗi
+      if (!selectedShowtime || !selectedShowtime.room) {
+          return <div className="text-red-400 text-sm p-4 text-center">Không tải được dữ liệu phòng chiếu</div>;
+      }
 
-     // Lấy danh sách hàng VIP của phòng này
-     const currentVipRows = getVipRows();
+      // Lấy số hàng/cột từ DB (fallback về 5x8 nếu thiếu)
+      const numRows = selectedShowtime.room.rows || 5;
+      const numCols = selectedShowtime.room.cols || 8;
+      const vipRows = selectedShowtime.room.vipRows || [];
 
-     return (
-        <div className="mt-4 border p-4 rounded-lg bg-gray-50">
-           <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><LayoutGrid size={16}/> Sơ đồ ghế</h4>
+      // 2. Tạo mảng Hàng (Rows) động: 5 -> ['A', 'B', 'C', 'D', 'E']
+      const rows = Array.from({ length: numRows }, (_, i) => String.fromCharCode(65 + i));
+
+      // 3. Tạo mảng Cột (Cols) động: 8 -> [1, 2, 3, 4, 5, 6, 7, 8]
+      const cols = Array.from({ length: numCols }, (_, i) => i + 1);
+
+      return (
+        <div className="mt-4 border p-4 rounded-lg bg-gray-50 overflow-x-auto"> 
+           <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><LayoutGrid size={16}/> Sơ đồ ghế ({selectedShowtime.room.name})</h4>
            
-           <div className="flex flex-col gap-2 items-center">
-              <div className="w-full h-1 bg-gray-400 mb-4 rounded shadow-sm relative"><span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-gray-500 uppercase">Màn hình</span></div>
+           <div className="flex flex-col gap-2 items-center min-w-max mx-auto"> 
+              <div className="w-2/3 h-1 bg-gray-400 mb-4 rounded shadow-sm relative">
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] text-gray-500 uppercase font-bold tracking-widest">Màn hình</span>
+              </div>
               
               {rows.map(row => {
-                 const isRowVip = currentVipRows.includes(row);
+                 const isRowVip = vipRows.includes(row);
                  return (
                     <div key={row} className="flex gap-2 items-center">
                        {/* Nhãn hàng ghế */}
-                       <span className={`text-xs font-bold w-4 ${isRowVip ? 'text-amber-500' : 'text-gray-400'}`}>{row}</span>
+                       <span className={`text-xs font-bold w-4 text-center ${isRowVip ? 'text-amber-600' : 'text-gray-400'}`}>{row}</span>
                        
                        {cols.map(col => {
                           const seatName = `${row}${col}`;
@@ -276,10 +290,10 @@ export default function Tickets() {
                                             : 'bg-white border border-gray-300 hover:border-blue-400 hover:text-blue-500' // Màu Thường
                                   }
                                `}
-                               title={isRowVip ? `VIP (+10k)` : 'Standard'}
+                               title={`${seatName} ${isRowVip ? '(VIP)' : ''}`}
                              >
                                 {/* Icon vương miện cho ghế VIP */}
-                                {isRowVip && !isTaken && !isSelected && <Crown size={8} className="absolute -top-1 -right-1 text-yellow-600"/>}
+                                {isRowVip && !isTaken && !isSelected && <Crown size={10} className="absolute -top-1.5 -right-1.5 text-yellow-600 drop-shadow-sm bg-white rounded-full p-[1px]"/>}
                                 {seatName}
                              </button>
                           )
@@ -288,15 +302,15 @@ export default function Tickets() {
                  )
               })}
               
-              <div className="flex gap-4 mt-4 text-xs justify-center flex-wrap text-gray-600">
+              <div className="flex gap-4 mt-6 text-xs justify-center flex-wrap text-gray-600 border-t pt-2 w-full">
                  <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-200 border border-red-200 rounded"></span> Đã bán</div>
                  <div className="flex items-center gap-1"><span className="w-3 h-3 bg-amber-600 rounded"></span> Đang chọn</div>
-                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-400 rounded"></span> VIP (+10k)</div>
+                 <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-100 border border-yellow-400 rounded"></span> VIP</div>
                  <div className="flex items-center gap-1"><span className="w-3 h-3 bg-white border border-gray-300 rounded"></span> Thường</div>
               </div>
            </div>
         </div>
-     )
+      )
   };
 
   return (
@@ -330,9 +344,9 @@ export default function Tickets() {
                      {showtimes.map(s => {
                          const isExpired = new Date() > new Date(s.startTime);
                          return (
-                            <option key={s._id} value={s._id} disabled={isExpired} className={isExpired ? "text-gray-400" : ""}>
-                              {s.movie?.title || "Phim ???"} - {s.startTime ? new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "Giờ ?"} ({s.room?.name})
-                            </option>
+                           <option key={s._id} value={s._id} disabled={isExpired} className={isExpired ? "text-gray-400" : ""}>
+                             {s.movie?.title || "Phim ???"} - {s.startTime ? new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "Giờ ?"} ({s.room?.name})
+                           </option>
                          )
                      })}
                    </select>

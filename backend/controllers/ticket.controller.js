@@ -6,37 +6,63 @@ const User = require("../models/User");
 // Lưu ý: Nếu hệ thống đặt vé chính nằm ở orderController, bạn nhớ copy logic req.io sang bên đó nữa nhé!
 exports.createTicket = async (req, res) => {
   try {
-    const { user, showtime, seatNumber, price, status } = req.body;
+    // 1. Nhận đúng dữ liệu từ Frontend (POS)
+    const { showtime, seats, user, guestName, totalPrice, paymentStatus, isManual } = req.body;
 
-    // Kiểm tra showtime
-    const foundShowtime = await Showtime.findById(showtime);
-    if (!foundShowtime) return res.status(404).json({ message: "Showtime not found" });
+    console.log("📦 Dữ liệu nhận được:", req.body); // Log ra để debug
 
-    // Kiểm tra ghế trùng (Trong DB)
-    const existingTicket = await Ticket.findOne({ showtime, seatNumber, status: "booked" });
-    if (existingTicket) return res.status(400).json({ message: "Seat already taken" });
+    // 2. Validate dữ liệu đầu vào
+    if (!showtime || !seats || seats.length === 0) {
+      return res.status(400).json({ message: "Vui lòng chọn suất chiếu và ghế." });
+    }
 
-    const ticket = new Ticket({
-      user,
+    // 3. Kiểm tra xem các ghế này đã bị ai mua chưa
+    const existingTickets = await Ticket.find({
       showtime,
-      seatNumber, 
-      price,
-      status: status || "booked"
+      status: { $ne: "cancelled" }, // Bỏ qua vé đã hủy
+      // Kiểm tra xem trong mảng ghế đã bán có chứa bất kỳ ghế nào khách đang chọn không
+      seats: { $in: seats } 
+    });
+
+    if (existingTickets.length > 0) {
+      // Tìm ra ghế nào bị trùng để báo lỗi chi tiết
+      const takenSeats = existingTickets.flatMap(t => t.seats).filter(s => seats.includes(s));
+      return res.status(400).json({ message: `Ghế ${takenSeats.join(", ")} đã có người đặt rồi!` });
+    }
+
+    // 4. Tạo vé mới (Lưu mảng ghế)
+    const ticket = new Ticket({
+      user: user || null, // Nếu null thì lưu null (Khách vãng lai)
+      guestName: guestName || "Khách vãng lai",
+      showtime,
+      seats: seats, // Lưu cả mảng ["A1", "A2"] vào 1 vé duy nhất
+      totalPrice: totalPrice || 0, // Frontend đã tính toán rồi
+      paymentStatus: paymentStatus || "unpaid",
+      status: "success", // Bán tại quầy thì mặc định là thành công
+      isManual: isManual || false // Đánh dấu vé POS
     });
 
     await ticket.save();
 
-    // 🔥 [SOCKET REAL-TIME]: Báo cho tất cả client trong phòng 'showtime' biết ghế này đã bán
-    if (req.io) {
-        // Sự kiện 'seat_sold' sẽ làm ghế chuyển sang màu Xám trên Frontend
-        req.io.to(showtime).emit("seat_sold", seatNumber);
-        console.log(`📡 Socket emitted: seat_sold ${seatNumber} for showtime ${showtime}`);
+    // 5. Cập nhật lịch sử mua vé cho User (Nếu là thành viên)
+    if (user) {
+        await User.findByIdAndUpdate(user, { $push: { tickets: ticket._id } });
     }
 
-    res.status(201).json({ message: "Ticket created successfully", ticket });
+    // 🔥 [SOCKET REAL-TIME]: Báo cho tất cả client khác biết ghế đã bán
+    if (req.io) {
+        // Emit danh sách ghế vừa bán để các máy khác cập nhật thành màu đỏ
+        seats.forEach(seat => {
+            req.io.to(showtime).emit("seat_sold", seat);
+        });
+        console.log(`📡 Socket emitted: Sold seats [${seats}] for showtime ${showtime}`);
+    }
+
+    res.status(201).json({ message: "Xuất vé thành công", ticket });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating ticket", error: error.message });
+    console.error("❌ Lỗi Create Ticket:", error);
+    res.status(500).json({ message: "Lỗi server khi tạo vé", error: error.message });
   }
 };
 
