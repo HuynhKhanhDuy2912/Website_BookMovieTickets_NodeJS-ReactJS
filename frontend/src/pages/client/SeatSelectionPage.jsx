@@ -4,7 +4,7 @@ import api from "../../api/axiosConfig";
 import { Armchair, ArrowLeft, Ban, Clock, Crown } from "lucide-react"; 
 import io from "socket.io-client";
 
-// URL Backend (Đảm bảo đúng port của bạn)
+// URL Backend
 const SOCKET_URL = "http://localhost:5000";
 
 export default function SeatSelectionPage() {
@@ -18,12 +18,11 @@ export default function SeatSelectionPage() {
    const [selectedSeats, setSelectedSeats] = useState([]); // Ghế TÔI đang chọn
    const [heldSeats, setHeldSeats] = useState({});         // Ghế NGƯỜI KHÁC đang chọn (bao gồm Admin)
 
-   // State Timer
    const [seatTimers, setSeatTimers] = useState({}); 
    const [timeLeft, setTimeLeft] = useState(null);   
    const [loading, setLoading] = useState(true);
 
-   // Helper: Lấy ID người dùng (Ưu tiên User đăng nhập, nếu không thì dùng Session để tránh trùng ID giữa các tab)
+   // Helper: Lấy ID người dùng (Session Storage cho Guest để tránh trùng)
    const getMyUserId = () => {
       let currentUser = null;
       try {
@@ -34,12 +33,10 @@ export default function SeatSelectionPage() {
           }
       } catch (e) {} 
 
-      // 1. Ưu tiên User đã đăng nhập
       if (currentUser && (currentUser._id || currentUser.id)) {
          return currentUser._id || currentUser.id;
       }
 
-      // 2. Nếu là khách vãng lai -> Dùng SESSION STORAGE (Mỗi tab 1 ID khác nhau)
       let guestId = sessionStorage.getItem("guest_session_id");
       if (!guestId) {
          guestId = "guest_" + Math.random().toString(36).substr(2, 9);
@@ -50,16 +47,14 @@ export default function SeatSelectionPage() {
 
    const myUserId = getMyUserId();
 
-   // --- 1. HÀM FETCH DATA (Đưa ra ngoài để gọi lại khi có Socket refresh) ---
+   // --- 1. FETCH DATA (Gọi lại khi refresh_seats) ---
    const fetchData = useCallback(async () => {
       try {
-         // Lưu ý: Không set loading=true ở đây để tránh nháy trang khi update ngầm
          const showtimeRes = await api.get(`/showtime/${showtimeId}`);
          setShowtime(showtimeRes.data);
 
          const ticketRes = await api.get(`/ticket/showtime/${showtimeId}`);
          if (Array.isArray(ticketRes.data)) {
-            // Logic gộp ghế: hỗ trợ cả cấu trúc cũ (seatNumber) và mới (seats array)
             const occupied = ticketRes.data.flatMap(t => {
                 if (t.seats && t.seats.length > 0) return t.seats;
                 if (t.seatNumber) return [t.seatNumber];
@@ -75,22 +70,20 @@ export default function SeatSelectionPage() {
       }
    }, [showtimeId]);
 
-   // --- 2. GỌI FETCH DATA LẦN ĐẦU ---
+   // --- 2. INIT FETCH ---
    useEffect(() => {
       setLoading(true); 
       fetchData();
    }, [fetchData]);
 
-   // --- 3. SETUP SOCKET ---
+   // --- 3. SOCKET ---
    useEffect(() => {
-      // Khởi tạo connection
       socketRef.current = io(SOCKET_URL);
       const socket = socketRef.current;
 
       console.log("🆔 My User ID:", myUserId);
       socket.emit("join_showtime", { showtimeId, userId: myUserId });
-
-      // A. Load trạng thái ghế ban đầu
+      socket.emit("reset_checkout_status", { showtimeId, userId: myUserId });
       socket.on("load_initial_seats", ({ myHolds, othersHolds }) => {
          if (myHolds && myHolds.length > 0) {
             const seats = myHolds.map(h => h.seat);
@@ -99,58 +92,56 @@ export default function SeatSelectionPage() {
             setSelectedSeats(seats);
             setSeatTimers(timers);
          }
-         setHeldSeats(othersHolds || {});
+         // othersHolds có thể là object { "A1": userId } hoặc { "A1": {userId, status} }
+         // Ta cần chuẩn hóa nếu server gửi object phức tạp, nhưng ở đây giả sử server gửi simple map
+         // Nếu server gửi object {userId, status} thì ta chỉ cần userId để hiển thị màu xanh
+         const simpleHolds = {};
+         for (const [seat, info] of Object.entries(othersHolds || {})) {
+             simpleHolds[seat] = typeof info === 'object' ? info.userId : info;
+         }
+         setHeldSeats(simpleHolds);
       });
 
-      // B. Khi có vé vừa bán thành công (Từ Admin hoặc Client khác)
       socket.on("seat_sold", (newlySoldSeats) => {
          const seatsArray = Array.isArray(newlySoldSeats) ? newlySoldSeats : [newlySoldSeats];
-         console.log("🔥 Socket: Vé đã bán:", seatsArray);
-
-         // 1. Tô đỏ ngay lập tức
          setBookedSeats(prev => [...prev, ...seatsArray]);
-         
-         // 2. Xóa khỏi danh sách đang giữ (heldSeats)
          setHeldSeats(prev => {
              const newState = { ...prev };
              seatsArray.forEach(s => delete newState[s]);
              return newState;
          });
-
-         // 3. Nếu mình đang chọn trúng ghế đó -> Bỏ chọn
          setSelectedSeats(prev => prev.filter(s => !seatsArray.includes(s)));
       });
 
-      // C. Khi ghế đang được giữ (Hold)
       socket.on("seat_held", ({ seatLabel, holderId }) => {
          if (holderId === myUserId) {
-            // Của mình -> Màu Vàng
             setSelectedSeats(prev => [...new Set([...prev, seatLabel])]);
             setSeatTimers(prev => ({ ...prev, [seatLabel]: Date.now() + 5 * 60 * 1000 }));
          } else {
-            // Của người khác -> Màu Xanh
             setHeldSeats(prev => ({ ...prev, [seatLabel]: holderId }));
          }
       });
-
-      // D. Khi ghế được nhả ra
+      // Nghe tin dữ từ Server (Bị Admin cướp)
+      socket.on("seat_stolen_by_admin", (seatLabel) => {
+          alert(`⚠️ Rất xin lỗi, ghế ${seatLabel} vừa được ưu tiên bán trực tiếp tại quầy.\n\nMong quý khách thông cảm và vui lòng chọn ghế khác! 🙏`);      
+      });
       socket.on("seat_released", (seatLabel) => {
          setHeldSeats(prev => { const n = { ...prev }; delete n[seatLabel]; return n; });
          setSelectedSeats(prev => prev.filter(s => s !== seatLabel));
       });
 
-      // E. Các sự kiện Admin chọn (Visual)
+      // Admin chọn ghế -> Client thấy màu xanh (như người thường)
       socket.on("seat_selected", ({ seat, userId }) => {
           if (userId !== myUserId) setHeldSeats(prev => ({ ...prev, [seat]: userId }));
       });
+      
       socket.on("seat_unselected", ({ seat }) => {
           setHeldSeats(prev => { const n = { ...prev }; delete n[seat]; return n; });
       });
 
-      // F. REFRESH DATA NGẦM (Thay vì reload trang)
       socket.on("refresh_seats", () => {
           console.log("🔄 Socket: Refreshing data...");
-          fetchData(); // Gọi lại API lấy dữ liệu mới nhất
+          fetchData(); 
       });
 
       return () => {
@@ -158,7 +149,7 @@ export default function SeatSelectionPage() {
       };
    }, [showtimeId, myUserId, fetchData]);
 
-   // --- LOGIC TIMER ---
+   // --- TIMER ---
    useEffect(() => {
       if (selectedSeats.length === 0) { setTimeLeft(null); return; }
       const interval = setInterval(() => {
@@ -210,6 +201,15 @@ export default function SeatSelectionPage() {
    };
 
    const handleCheckout = () => {
+      // 🔥 Báo Server: Khóa ghế (chuyển sang trạng thái CHECKOUT)
+      // Để Admin thấy màu Tím và không cướp được
+      if (socketRef.current && selectedSeats.length > 0) {
+          socketRef.current.emit("client_enter_checkout", { 
+              showtimeId, 
+              seats: selectedSeats 
+          });
+      }
+
       navigate("/checkout", { state: { showtime, selectedSeats, totalPrice: calculateTotal() } });
    };
 
@@ -218,6 +218,7 @@ export default function SeatSelectionPage() {
 
    return (
       <div className="bg-gray-900 min-h-screen text-white flex flex-col">
+         {/* HEADER */}
          <div className="bg-gray-800 p-4 border-b border-gray-700 flex items-center justify-between">
             <div className="flex items-center">
                <button onClick={() => navigate(-1)} className="text-white p-2 hover:bg-gray-700 rounded-full"><ArrowLeft /></button>
@@ -230,10 +231,13 @@ export default function SeatSelectionPage() {
                </div>
             )}
          </div>
+
+         {/* SEAT MAP */}
          <div className="flex-1 p-4 overflow-auto flex justify-center">
             <div className="w-full max-w-4xl flex flex-col items-center">
                <div className="w-2/3 h-2 bg-yellow-500 shadow-[0_5px_20px_orange] mb-12 rounded-full mt-4"></div>
                <p className="text-gray-500 text-sm mb-8 uppercase tracking-widest">Màn hình</p>
+               
                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${room.cols}, minmax(40px, 1fr))` }}>
                   {room.seats.map((seat) => {
                      const seatNum = seat.seatNumber.trim();
@@ -247,7 +251,7 @@ export default function SeatSelectionPage() {
                      if (isMaintenance) seatClasses = "bg-red-900/20 border-red-900 text-red-700 cursor-not-allowed";
                      else if (isTaken) seatClasses = "bg-gray-600 opacity-50 cursor-not-allowed";
                      else if (isHeldByOthers) {
-                         // Gộp chung màu xanh cho mọi người khác (kể cả Admin)
+                         // Tất cả người khác (kể cả Admin) đều hiện màu Xanh
                          seatClasses = "bg-blue-600 border-blue-500";
                      }
                      else if (isSelected) seatClasses = "bg-yellow-500 text-black font-bold scale-110 z-10";
@@ -269,6 +273,7 @@ export default function SeatSelectionPage() {
                      );
                   })}
                </div>
+
                <div className="flex gap-4 mt-12 text-sm text-gray-400 justify-center flex-wrap">
                   <div className="flex items-center gap-2"><div className="w-5 h-5 bg-gray-800 border border-gray-600 rounded"></div> Thường</div>
                   <div className="flex items-center gap-2"><div className="w-5 h-5 bg-gray-800 border border-orange-500 rounded"></div> VIP</div>
@@ -278,6 +283,8 @@ export default function SeatSelectionPage() {
                </div>
             </div>
          </div>
+
+         {/* FOOTER */}
          <div className="bg-white p-4 text-black flex justify-between items-center sticky bottom-0 shadow-lg">
             <div>Ghế: <b className="text-lg text-red-600">{selectedSeats.join(", ")}</b></div>
             <div className="flex gap-4 items-center">

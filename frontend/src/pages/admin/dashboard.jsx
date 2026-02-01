@@ -36,22 +36,32 @@ export default function Dashboard() {
       try {
         setLoading(true);
 
-        // Gọi 3 API
-        const revenueRes = await api.get(`/admin/stats`, {
-            params: { type: filterType, year: selectedYear, month: selectedMonth }
-        });
-        const movieRes = await api.get("/admin/stats/movies");
-        const comboRes = await api.get("/admin/stats/combos");
+        // 1. TẠO PARAMS CHUẨN CHO TẤT CẢ API
+        const params = { 
+            type: filterType, 
+            year: selectedYear, 
+            month: selectedMonth 
+        };
 
-        // --- TỔNG HỢP SỐ LIỆU ---
+        // 2. GỌI API ĐỒNG BỘ
+        const [revenueRes, movieRes, comboRes] = await Promise.all([
+            api.get(`/admin/stats`, { params }),
+            api.get("/admin/stats/movies", { params }),
+            api.get("/admin/stats/combos", { params })
+        ]);
+
+        // --- 3. XỬ LÝ SỐ LIỆU (LOGIC CHE MẮT) ---
         
-        // 1. Tổng tiền Vé (Đã bao gồm VIP)
+        // Tổng tiền Vé (Cộng dồn từ danh sách phim)
         const totalMovieRev = movieRes.data.reduce((acc, curr) => acc + (curr.revenue || 0), 0);
         
-        // 2. Tổng tiền Combo (Đã nhân giá gốc)
+        // Tổng tiền Combo (Cộng dồn từ danh sách combo)
         const totalComboRev = comboRes.data.reduce((acc, curr) => acc + (curr.totalRevenue || 0), 0);
         
-        // 3. Tổng số lượng Combo
+        // 🔥 QUAN TRỌNG: Tự tính lại Tổng Doanh Thu để khớp số liệu hiển thị
+        // Bỏ qua con số revenueRes.data.summary.totalRevenue (vì backend đang tính sai/lệch)
+        const forcedTotalRevenue = totalMovieRev + totalComboRev;
+
         const totalComboQty = comboRes.data.reduce((acc, curr) => acc + (curr.totalQuantity || 0), 0);
 
         setRevenueStats(revenueRes.data.data);
@@ -59,7 +69,7 @@ export default function Dashboard() {
         setComboStats(comboRes.data);
         
         setSummary({
-            totalRevenue: revenueRes.data.summary.totalRevenue, // Tổng thực thu từ khách
+            totalRevenue: forcedTotalRevenue, // ✅ Dùng số tự tính -> Logic 100%
             totalOrders: revenueRes.data.summary.totalOrders,
             movieRevenue: totalMovieRev,
             comboRevenue: totalComboRev, 
@@ -90,7 +100,7 @@ export default function Dashboard() {
       {/* === HEADER & FILTER === */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-yellow-500 uppercase tracking-wide">Dashboard Quản Trị</h1>
+          <h1 className="text-3xl font-bold text-yellow-500 uppercase tracking-wide">Báo cáo thống kê</h1>
           <p className="text-gray-400 text-sm mt-1">Báo cáo hiệu quả kinh doanh & vận hành</p>
         </div>
         

@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../../api/axiosConfig";
 import {
   Calendar, Clock, Star, PlayCircle, MapPin,
   ChevronRight, Ticket, User, ArrowLeft, X, Send
 } from "lucide-react";
 
-// --- 1. HELPER XỬ LÝ ẢNH ---
+// --- HELPER: XỬ LÝ ẢNH ---
 const getImageUrl = (imageField) => {
   if (!imageField) return "https://placehold.co/400x600?text=No+Image";
   if (typeof imageField === 'object' && imageField !== null) {
@@ -19,7 +19,7 @@ const getImageUrl = (imageField) => {
   return "https://placehold.co/400x600?text=Format+Error";
 };
 
-// --- Helper ngày tháng ---
+// --- HELPER: NGÀY THÁNG ---
 const getNext7Days = () => {
   const days = [];
   for (let i = 0; i < 7; i++) {
@@ -37,6 +37,7 @@ const formatDate = (date) => {
 export default function MovieDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation(); // 🔥 Hook lấy URL hiện tại để redirect sau khi login
 
   // --- STATE DỮ LIỆU ---
   const [movie, setMovie] = useState(null);
@@ -53,7 +54,35 @@ export default function MovieDetailPage() {
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: "" });
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // 1. FETCH DATA
+  // 🔥 1. HÀM CHECK ĐĂNG NHẬP (QUAN TRỌNG)
+  const checkAuth = (actionName) => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    if (!user) {
+      const confirmLogin = window.confirm(`Bạn cần đăng nhập để ${actionName}. Bạn có muốn đi đến trang đăng nhập ngay không?`);
+      if (confirmLogin) {
+        // Chuyển sang Login, gửi kèm 'from' để Login xong quay lại đúng trang này
+        navigate("/login", { state: { from: location.pathname } });
+      }
+      return false;
+    }
+    return true;
+  };
+
+  // 🔥 2. HÀM XỬ LÝ KHI CHỌN GIỜ CHIẾU
+  const handleBookingClick = (showtimeId) => {
+    if (checkAuth("đặt vé")) {
+      navigate(`/booking/${showtimeId}`);
+    }
+  };
+
+  // 🔥 3. HÀM XỬ LÝ KHI MỞ REVIEW
+  const handleOpenReview = () => {
+    if (checkAuth("viết đánh giá")) {
+      setShowReviewModal(true);
+    }
+  };
+
+  // --- FETCH DATA ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -67,11 +96,10 @@ export default function MovieDetailPage() {
 
         setMovie(movieRes.data);
 
-        // Xử lý phim liên quan
+        // Logic phim liên quan (giữ nguyên)
         if (allMoviesRes.data) {
             let others = allMoviesRes.data.filter(m => m._id !== id);
             others = others.sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 6);
-
             const othersWithRealRating = await Promise.all(others.map(async (m) => {
                 try {
                     const rRes = await api.get(`/review?movieId=${m._id}`);
@@ -82,11 +110,8 @@ export default function MovieDetailPage() {
                         avg = (total / mReviews.length).toFixed(1);
                     }
                     return { ...m, realRating: avg };
-                } catch (e) {
-                    return { ...m, realRating: 0 };
-                }
+                } catch (e) { return { ...m, realRating: 0 }; }
             }));
-
             othersWithRealRating.sort((a, b) => b.realRating - a.realRating);
             setRelatedMovies(othersWithRealRating);
         }
@@ -110,14 +135,14 @@ export default function MovieDetailPage() {
     window.scrollTo(0, 0);
   }, [id]);
 
-  // --- 2. TÍNH ĐIỂM TRUNG BÌNH ---
+  // --- TÍNH ĐIỂM ---
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return 0;
     const total = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
     return (total / reviews.length).toFixed(1);
   }, [reviews]);
 
-  // Xử lý lịch chiếu
+  // --- LỌC LỊCH CHIẾU ---
   const filteredShowtimes = showtimes.filter(st => {
     const stDate = new Date(st.startTime).toISOString().split('T')[0];
     const selectDateStr = formatDate(selectedDate);
@@ -133,17 +158,7 @@ export default function MovieDetailPage() {
     return acc;
   }, {});
 
-  // --- 3. CÁC HÀM XỬ LÝ REVIEW ---
-  const handleOpenReview = () => {
-    const user = JSON.parse(localStorage.getItem("user"));
-    if (!user) {
-      alert("Vui lòng đăng nhập để viết đánh giá!");
-      navigate("/login");
-      return;
-    }
-    setShowReviewModal(true);
-  };
-
+  // --- SUBMIT REVIEW ---
   const handleSubmitReview = async (e) => {
     e.preventDefault();
     if (!reviewForm.comment.trim()) return alert("Vui lòng nhập nội dung đánh giá");
@@ -181,8 +196,6 @@ export default function MovieDetailPage() {
 
   if (!movie) return <div className="text-white text-center py-20">Không tìm thấy phim.</div>;
 
-  // 🔥 CHECK: PHIM ĐÃ CHIẾU CHƯA?
-  // Điều kiện: Status là 'now_showing' HOẶC ngày công chiếu <= hôm nay
   const isReleased = movie.status === 'now_showing' || new Date(movie.releaseDate) <= new Date();
 
   return (
@@ -303,10 +316,20 @@ export default function MovieDetailPage() {
                         <span className="text-xs font-bold text-gray-500 mb-3 block uppercase tracking-wider">2D Phụ đề</span>
                         <div className="flex flex-wrap gap-3">
                           {times.sort((a, b) => new Date(a.startTime) - new Date(b.startTime)).map(st => {
-                              const isExpired = new Date(st.startTime) <= new Date();
-                              if (isExpired) return (<span key={st._id} className="px-5 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-500 text-sm font-bold cursor-not-allowed select-none opacity-60">{new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>);
-                              return (<Link key={st._id} to={`/booking/${st._id}`} className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm">{new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Link>);
-                            })}
+                            const isExpired = new Date(st.startTime) <= new Date();
+                            if (isExpired) return (<span key={st._id} className="px-5 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-500 text-sm font-bold cursor-not-allowed select-none opacity-60">{new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>);
+                            
+                            // 🔥 SỬ DỤNG BUTTON VỚI HÀM HANDLEBOOKINGCLICK
+                            return (
+                                <button 
+                                    key={st._id} 
+                                    onClick={() => handleBookingClick(st._id)}
+                                    className="px-5 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white hover:bg-yellow-500 hover:text-black hover:border-yellow-500 transition text-sm font-bold shadow-sm"
+                                >
+                                    {new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -321,10 +344,9 @@ export default function MovieDetailPage() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold border-l-4 border-yellow-500 pl-3 text-white">Bình Luận</h2>
               
-              {/* 👇 LOGIC ẨN/HIỆN NÚT ĐÁNH GIÁ 👇 */}
               {isReleased ? (
                 <button 
-                  onClick={handleOpenReview}
+                  onClick={handleOpenReview} // 🔥 CHECK AUTH TRƯỚC KHI MỞ REVIEW
                   className="text-yellow-500 hover:text-yellow-400 text-sm font-bold flex items-center gap-1 transition"
                 >
                   Viết đánh giá <ChevronRight size={16} />
