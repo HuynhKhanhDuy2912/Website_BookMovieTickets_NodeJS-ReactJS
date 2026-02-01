@@ -4,7 +4,7 @@ const Showtime = require("../models/Showtime");
 exports.getAllShowtimes = async (req, res) => {
   try {
     const showtimes = await Showtime.find()
-      .populate("movie", "title duration")
+      .populate("movie", "title duration posterUrl image")
       .populate("cinema", "name city")
       // ✅ Lấy vipRows để hiển thị nhanh danh sách nếu cần
       .populate("room", "name seatCount vipRows rows cols"); 

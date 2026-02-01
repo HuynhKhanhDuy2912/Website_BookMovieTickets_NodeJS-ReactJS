@@ -1,195 +1,359 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axiosConfig";
 import { 
-  Ticket, MapPin, Calendar, Clock, QrCode, Armchair, Utensils, History, PlayCircle, CheckCircle 
+  User, Lock, Ticket, Camera, Save, LogOut, 
+  MapPin, Calendar, Clock, PlayCircle, CheckCircle, QrCode, 
+  Utensils, Armchair, History
 } from "lucide-react";
 
-// Helper xử lý ảnh
+// --- HELPER ẢNH ---
 const getImageUrl = (imageField) => {
-  if (!imageField) return "https://placehold.co/150x200?text=No+Image";
-  if (typeof imageField === 'object' && imageField !== null) return imageField.secure_url || imageField.url || imageField.path;
+  if (!imageField) return "https://ui-avatars.com/api/?name=User&background=random";
+  if (typeof imageField === 'object' && imageField !== null) return imageField.secure_url || imageField.url;
   if (typeof imageField === 'string') {
     if (imageField.startsWith("http")) return imageField;
     return `http://localhost:5000/${imageField.replace(/\\/g, '/').replace(/^\//, '')}`;
   }
-  return "https://placehold.co/150x200?text=Error";
+  return "https://ui-avatars.com/api/?name=User&background=random";
 };
 
 const formatCurrency = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 
 export default function ProfilePage() {
-  const [orders, setOrders] = useState([]);
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState("profile"); // 'profile' | 'password' | 'tickets'
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("upcoming"); // 'upcoming' | 'history'
+  const [orders, setOrders] = useState([]);
+  
+  // State User Info
+  const [user, setUser] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    avatar: ""
+  });
 
+  // State Password
+  const [passwords, setPasswords] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+
+  // --- 1. LOAD DATA ---
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get("/order/my-orders");
-        // Sắp xếp: Vé mới nhất lên đầu
-        const sorted = res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setOrders(sorted);
-      } catch (err) {
-        console.error("Lỗi tải đơn hàng:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    fetchProfile();
     fetchOrders();
   }, []);
 
-  // --- LOGIC PHÂN LOẠI VÉ ---
-  const now = new Date();
-
-  const getTicketStatus = (startTime) => {
-      const start = new Date(startTime);
-      const end = new Date(start.getTime() + 120 * 60000); // Giả sử phim 2 tiếng
-
-      if (now < start) return { label: "Sắp chiếu", color: "bg-green-500", icon: <Calendar size={12}/>, type: 'upcoming' };
-      if (now >= start && now <= end) return { label: "Đang chiếu", color: "bg-yellow-500 animate-pulse", icon: <PlayCircle size={12}/>, type: 'showing' };
-      return { label: "Đã chiếu", color: "bg-gray-500", icon: <CheckCircle size={12}/>, type: 'expired' };
+  const fetchProfile = async () => {
+    try {
+        // Giả sử API lấy info là /users/profile hoặc lấy từ localStorage
+        // Ở đây mình lấy từ localStorage cho nhanh, bạn có thể thay bằng API call
+        const storedUser = JSON.parse(localStorage.getItem("user"));
+        if (storedUser) {
+            setUser({
+                name: storedUser.name || "",
+                email: storedUser.email || "",
+                phone: storedUser.phone || "",
+                avatar: storedUser.avatar || ""
+            });
+        }
+    } catch (err) {
+        console.error("Lỗi tải hồ sơ", err);
+    }
   };
 
-  // Lọc danh sách theo Tab
-  const filteredOrders = orders.filter(order => {
-      const showtime = order.showtime || {};
-      const status = getTicketStatus(showtime.startTime);
+  const fetchOrders = async () => {
+    try {
+      const res = await api.get("/order/my-orders");
+      setOrders(res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    } catch (err) {
+      console.error("Lỗi tải vé:", err);
+    }
+  };
+
+  // --- 2. HANDLERS ---
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+        // Gọi API cập nhật (thay đường dẫn API của bạn vào đây)
+        await api.put("/users/update-profile", { 
+            name: user.name, 
+            phone: user.phone 
+        });
+        
+        // Cập nhật lại LocalStorage
+        const currentUser = JSON.parse(localStorage.getItem("user"));
+        localStorage.setItem("user", JSON.stringify({ ...currentUser, name: user.name, phone: user.phone }));
+        
+        alert("✅ Cập nhật thông tin thành công!");
+    } catch (err) {
+        alert("❌ Lỗi: " + (err.response?.data?.message || err.message));
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (passwords.newPassword !== passwords.confirmPassword) {
+        return alert("❌ Mật khẩu xác nhận không khớp!");
+    }
+    setLoading(true);
+    try {
+        await api.put("/users/change-password", {
+            currentPassword: passwords.currentPassword,
+            newPassword: passwords.newPassword
+        });
+        alert("✅ Đổi mật khẩu thành công!");
+        setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } catch (err) {
+        alert("❌ Lỗi: " + (err.response?.data?.message || err.message));
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
+  };
+
+  // --- RENDER CONTENT THEO TAB ---
+  const renderContent = () => {
+    switch (activeTab) {
+      case "profile":
+        return (
+          <div className="animate-fade-in">
+            <h3 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-2">Thông Tin Cá Nhân</h3>
+            <form onSubmit={handleUpdateProfile} className="space-y-5">
+              {/* Avatar Upload (Mock UI) */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-yellow-500 relative group">
+                    <img src={getImageUrl(user.avatar)} alt="Avatar" className="w-full h-full object-cover"/>
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer">
+                        <Camera size={20} className="text-white"/>
+                    </div>
+                </div>
+                <div>
+                    <p className="text-sm text-gray-400">Ảnh đại diện</p>
+                    <p className="text-xs text-gray-500">JPG, PNG tối đa 2MB</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Họ và tên</label>
+                    <input 
+                        type="text" 
+                        value={user.name} 
+                        onChange={e => setUser({...user, name: e.target.value})}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none transition"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Số điện thoại</label>
+                    <input 
+                        type="text" 
+                        value={user.phone} 
+                        onChange={e => setUser({...user, phone: e.target.value})}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:border-yellow-500 focus:outline-none transition"
+                    />
+                </div>
+                <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Email (Không thể thay đổi)</label>
+                    <input 
+                        type="email" 
+                        value={user.email} 
+                        disabled 
+                        className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-gray-400 cursor-not-allowed"
+                    />
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button type="submit" disabled={loading} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 px-8 rounded-lg flex items-center gap-2 transition disabled:opacity-50">
+                    {loading ? "Đang lưu..." : <><Save size={18}/> Lưu Thay Đổi</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+
+      case "password":
+        return (
+          <div className="animate-fade-in">
+            <h3 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-2">Đổi Mật Khẩu</h3>
+            <form onSubmit={handleChangePassword} className="space-y-5 max-w-md">
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Mật khẩu hiện tại</label>
+                    <div className="relative">
+                        <Lock className="absolute left-3 top-3 text-gray-500" size={18}/>
+                        <input 
+                            type="password" 
+                            value={passwords.currentPassword}
+                            onChange={e => setPasswords({...passwords, currentPassword: e.target.value})}
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 pl-10 text-white focus:border-yellow-500 focus:outline-none"
+                            placeholder="••••••••"
+                        />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Mật khẩu mới</label>
+                    <div className="relative">
+                        <Lock className="absolute left-3 top-3 text-gray-500" size={18}/>
+                        <input 
+                            type="password" 
+                            value={passwords.newPassword}
+                            onChange={e => setPasswords({...passwords, newPassword: e.target.value})}
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 pl-10 text-white focus:border-yellow-500 focus:outline-none"
+                            placeholder="••••••••"
+                        />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Xác nhận mật khẩu mới</label>
+                    <div className="relative">
+                        <Lock className="absolute left-3 top-3 text-gray-500" size={18}/>
+                        <input 
+                            type="password" 
+                            value={passwords.confirmPassword}
+                            onChange={e => setPasswords({...passwords, confirmPassword: e.target.value})}
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 pl-10 text-white focus:border-yellow-500 focus:outline-none"
+                            placeholder="••••••••"
+                        />
+                    </div>
+                </div>
+                <div className="pt-4">
+                    <button type="submit" disabled={loading} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 px-8 rounded-lg flex items-center gap-2 transition disabled:opacity-50">
+                        {loading ? "Đang xử lý..." : "Đổi Mật Khẩu"}
+                    </button>
+                </div>
+            </form>
+          </div>
+        );
+
+      case "tickets":
+        return (
+          <div className="animate-fade-in">
+            <h3 className="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-2">Vé Của Tôi ({orders.length})</h3>
+            
+            {orders.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                    <Ticket size={48} className="mx-auto mb-3 opacity-50"/>
+                    <p>Bạn chưa mua vé nào.</p>
+                    <Link to="/" className="text-yellow-500 hover:underline mt-2 inline-block">Đặt vé ngay</Link>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {orders.map((order) => {
+                        const showtime = order.showtime || {};
+                        const movie = showtime.movie || {};
+                        const cinema = showtime.cinema || {};
+                        const now = new Date();
+                        const start = new Date(showtime.startTime);
+                        const isExpired = now > new Date(start.getTime() + 120*60000);
+                        
+                        return (
+                            <div key={order._id} className={`bg-gray-800 border rounded-xl overflow-hidden flex flex-col sm:flex-row transition hover:shadow-lg ${isExpired ? 'border-gray-700 opacity-70' : 'border-gray-600 hover:border-yellow-500'}`}>
+                                <div className="sm:w-32 h-32 bg-gray-900 shrink-0">
+                                    <img src={getImageUrl(movie.posterUrl)} className="w-full h-full object-cover"/>
+                                </div>
+                                <div className="p-4 flex-1 flex flex-col justify-between">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h4 className="font-bold text-lg text-white mb-1 line-clamp-1">{movie.title}</h4>
+                                            <p className="text-sm text-gray-400 flex items-center gap-1"><MapPin size={12}/> {cinema.name} - {showtime.room?.name}</p>
+                                            <p className="text-sm text-yellow-500 flex items-center gap-1 font-bold mt-1">
+                                                <Calendar size={12}/> {start.toLocaleDateString('vi-VN')} - <Clock size={12}/> {start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            {isExpired ? (
+                                                <span className="bg-gray-600 text-xs px-2 py-1 rounded text-white flex items-center gap-1">Đã chiếu</span>
+                                            ) : (
+                                                <span className="bg-green-600 text-xs px-2 py-1 rounded text-white flex items-center gap-1 animate-pulse"><PlayCircle size={10}/> Sắp chiếu</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-gray-700 flex justify-between items-end">
+                                        <div className="text-xs text-gray-400">
+                                            Ghế: <span className="text-white font-bold text-sm">{order.seats?.join(", ")}</span>
+                                        </div>
+                                        <div className="text-yellow-500 font-bold">{formatCurrency(order.totalPrice)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
+          </div>
+        );
       
-      if (activeTab === 'upcoming') {
-          return status.type === 'upcoming' || status.type === 'showing';
-      } else {
-          return status.type === 'expired';
-      }
-  });
+      default: return null;
+    }
+  };
 
   return (
-    <div className="bg-gray-900 min-h-screen text-white py-10">
-      <div className="container mx-auto px-4 max-w-4xl">
-        
-        {/* HEADER & TABS */}
-        <div className="mb-8">
-            <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-                <div className="bg-yellow-500 p-2 rounded-lg text-black"><Ticket size={24} /></div>
-                Vé Của Tôi
-            </h2>
-
-            {/* TAB BUTTONS */}
-            <div className="flex bg-gray-800 p-1 rounded-xl w-full md:w-fit">
-                <button 
-                    onClick={() => setActiveTab("upcoming")}
-                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${activeTab === 'upcoming' ? 'bg-yellow-500 text-black shadow-lg' : 'text-gray-400 hover:text-white'}`}
-                >
-                    <Ticket size={16}/> Vé Sắp Tới
-                </button>
-                <button 
-                    onClick={() => setActiveTab("history")}
-                    className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${activeTab === 'history' ? 'bg-gray-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-                >
-                    <History size={16}/> Lịch Sử
-                </button>
-            </div>
-        </div>
-
-        {/* DANH SÁCH VÉ */}
-        {loading ? (
-          <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-yellow-500"></div></div>
-        ) : filteredOrders.length > 0 ? (
-          <div className="space-y-6 animate-fade-in-up">
-            {filteredOrders.map((order) => {
-              const showtime = order.showtime || {};
-              const movie = showtime.movie || {};
-              const cinema = showtime.cinema || {};
-              const statusInfo = getTicketStatus(showtime.startTime);
-              const isExpired = statusInfo.type === 'expired';
-
-              return (
-                <div key={order._id} className={`rounded-2xl overflow-hidden border transition-all duration-300 shadow-xl flex flex-col md:flex-row group ${isExpired ? 'bg-gray-800 border-gray-700 opacity-75 grayscale hover:grayscale-0 hover:opacity-100' : 'bg-gray-800 border-gray-600 hover:border-yellow-500'}`}>
-                  
-                  {/* 1. POSTER */}
-                  <div className="md:w-48 h-48 md:h-auto shrink-0 bg-gray-900 relative">
-                    <img 
-                      src={getImageUrl(movie.posterUrl)} 
-                      alt={movie.title} 
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Badge Trạng thái Phim */}
-                    <div className="absolute top-3 left-3">
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase shadow-md flex items-center gap-1 text-white ${statusInfo.color}`}>
-                           {statusInfo.icon} {statusInfo.label}
-                        </span>
-                    </div>
-                  </div>
-
-                  {/* 2. INFO */}
-                  <div className="flex-1 p-5 md:p-6 flex flex-col justify-between">
-                    <div>
-                      <h3 className="text-xl md:text-2xl font-bold text-white mb-2 group-hover:text-yellow-500 transition">
-                        {movie.title || "Tên phim không tồn tại"}
-                      </h3>
-                      
-                      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-400 mb-4">
-                        <span className="flex items-center gap-2"><MapPin size={14} className="text-yellow-500"/> {cinema.name} - {showtime.room?.name}</span>
-                        <span className="flex items-center gap-2 font-bold text-white"><Calendar size={14} className="text-yellow-500"/> {showtime.startTime ? new Date(showtime.startTime).toLocaleDateString('vi-VN') : ""}</span>
-                        <span className="flex items-center gap-2 font-bold text-yellow-400"><Clock size={14} className="text-yellow-500"/> {showtime.startTime ? new Date(showtime.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ""}</span>
-                      </div>
-
-                      {/* Thông tin Ghế & Combo */}
-                      <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50 flex flex-col gap-2">
-                          <div className="flex items-start gap-2">
-                             <Armchair size={16} className="text-gray-500 mt-1"/>
-                             <span className="text-white font-bold">{order.seats && order.seats.length > 0 ? order.seats.join(", ") : "N/A"}</span>
-                          </div>
-                          {order.combos && order.combos.length > 0 && (
-                             <div className="flex items-start gap-2 border-t border-gray-700/50 pt-2">
-                                <Utensils size={16} className="text-gray-500 mt-1"/>
-                                <span className="text-sm text-gray-300">
-                                   {order.combos.map(c => `${c.quantity}x ${c.comboId?.name || c.name}`).join(", ")}
-                                </span>
-                             </div>
-                          )}
-                      </div>
+    <div className="bg-gray-900 min-h-screen text-white py-8 font-sans">
+      <div className="container mx-auto px-4 max-w-6xl">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            
+            {/* SIDEBAR MENU */}
+            <div className="lg:col-span-1">
+                <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 sticky top-4">
+                    <div className="flex flex-col items-center mb-6">
+                        <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-gray-700 mb-3 shadow-lg">
+                            <img src={getImageUrl(user.avatar)} alt="Avatar" className="w-full h-full object-cover"/>
+                        </div>
+                        <h2 className="text-xl font-bold text-white">{user.name || "User Name"}</h2>
+                        <p className="text-sm text-gray-500">{user.email}</p>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-gray-700 flex justify-between items-end">
-                       <div className="text-xs text-gray-500">Mã: <span className="font-mono text-white">{order.orderCode}</span></div>
-                       <div className="text-xl font-bold text-yellow-500">{formatCurrency(order.totalPrice)}</div>
-                    </div>
-                  </div>
-
-                  {/* 3. QR CODE (Chỉ hiện nếu chưa hết hạn) */}
-                  {!isExpired && (
-                    <div className="bg-white md:w-36 flex flex-col items-center justify-center p-4 gap-2 border-l-4 border-gray-900 border-dashed relative">
-                      <div className="absolute -left-2 top-0 bottom-0 w-4 flex flex-col justify-between py-2">
-                        {[...Array(6)].map((_,i) => <div key={i} className="w-4 h-4 bg-gray-900 rounded-full -ml-2"></div>)}
-                      </div>
-                      <QrCode size={80} className="text-black" />
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Scan Entry</span>
-                    </div>
-                  )}
-
-                  {/* Nếu hết hạn thì hiện cột xám */}
-                  {isExpired && (
-                      <div className="bg-gray-700 md:w-12 flex items-center justify-center border-l border-gray-600">
-                          <span className="transform -rotate-90 whitespace-nowrap text-xs font-bold text-gray-400 uppercase tracking-widest">Đã sử dụng</span>
-                      </div>
-                  )}
-
+                    <nav className="space-y-2">
+                        <button 
+                            onClick={() => setActiveTab("profile")}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeTab === 'profile' ? 'bg-yellow-500 text-black font-bold' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                        >
+                            <User size={18}/> Hồ Sơ Của Tôi
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab("password")}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeTab === 'password' ? 'bg-yellow-500 text-black font-bold' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                        >
+                            <Lock size={18}/> Đổi Mật Khẩu
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab("tickets")}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeTab === 'tickets' ? 'bg-yellow-500 text-black font-bold' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                        >
+                            <Ticket size={18}/> Vé Đã Mua
+                        </button>
+                        <div className="border-t border-gray-700 my-2 pt-2">
+                            <button 
+                                onClick={handleLogout}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition"
+                            >
+                                <LogOut size={18}/> Đăng Xuất
+                            </button>
+                        </div>
+                    </nav>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-24 bg-gray-800 rounded-2xl border border-dashed border-gray-700">
-             <Ticket size={48} className="text-gray-600 mx-auto mb-4"/>
-             <h3 className="text-xl font-bold text-white mb-2">
-                 {activeTab === 'upcoming' ? "Bạn không có vé sắp chiếu" : "Lịch sử trống"}
-             </h3>
-             <p className="text-gray-400 mb-6">Hãy đặt vé ngay để thưởng thức những bộ phim bom tấn!</p>
-             <Link to="/" className="bg-yellow-500 text-black font-bold py-3 px-8 rounded-full shadow-lg hover:bg-yellow-400 transition">Đặt vé ngay</Link>
-          </div>
-        )}
+            </div>
+
+            {/* MAIN CONTENT */}
+            <div className="lg:col-span-3">
+                <div className="bg-gray-800 rounded-xl p-6 md:p-8 border border-gray-700 shadow-xl min-h-[500px]">
+                    {renderContent()}
+                </div>
+            </div>
+
+        </div>
       </div>
     </div>
   );
