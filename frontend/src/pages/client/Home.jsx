@@ -21,6 +21,9 @@ export default function Home() {
   // State cho Slider
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // 🔥 STATE MỚI: QUẢN LÝ TRAILER POPUP
+  const [selectedTrailer, setSelectedTrailer] = useState(null);
+
   // --- FETCH DATA ---
   useEffect(() => {
     const fetchData = async () => {
@@ -35,7 +38,6 @@ export default function Home() {
         setMoviesNow(nowShowing);
         setMoviesComing(comingSoon);
         
-        // Lấy 5 phim làm slider cho phong phú
         if(nowShowing.length > 0) {
              setBanners(nowShowing.slice(0, 5)); 
         } else if (allMovies.length > 0) {
@@ -58,11 +60,9 @@ export default function Home() {
   // --- LOGIC AUTO SLIDER ---
   useEffect(() => {
     if (banners.length === 0) return;
-
     const interval = setInterval(() => {
       setCurrentIndex((prevIndex) => (prevIndex + 1) % banners.length);
     }, 5000);
-
     return () => clearInterval(interval);
   }, [banners]);
 
@@ -74,15 +74,28 @@ export default function Home() {
     setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length);
   };
 
-  // --- LOGIC LỌC PHIM & GIỚI HẠN HIỂN THỊ ---
+  // --- 🔥 LOGIC XỬ LÝ TRAILER ---
+  // Hàm chuyển link youtube thường (watch?v=...) thành link embed (embed/...)
+  const getEmbedUrl = (url) => {
+      if (!url) return "";
+      // Xử lý link dạng https://www.youtube.com/watch?v=VIDEO_ID
+      const videoIdMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:.*v=|.*\/)([\w-]{11}))/);
+      if (videoIdMatch && videoIdMatch[1]) {
+          return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1`;
+      }
+      return url; // Trả về nguyên gốc nếu không nhận diện được
+  };
+
+  const openTrailer = (url) => {
+      if (!url) return alert("Phim này chưa có trailer!");
+      setSelectedTrailer(getEmbedUrl(url));
+  };
+
+  // --- LOGIC LỌC PHIM ---
   const originalList = activeTab === "now" ? moviesNow : moviesComing;
-  
-  // 1. Lọc theo từ khóa tìm kiếm
   const filteredMovies = originalList.filter(movie => 
     movie.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // 2. 🔥 GIỚI HẠN 8 PHIM (Cắt mảng)
   const displayedMovies = filteredMovies.slice(0, 8);
 
   if (loading) {
@@ -94,7 +107,7 @@ export default function Home() {
   }
 
   return (
-    <div className="bg-gray-900 min-h-screen text-white pb-20">
+    <div className="bg-gray-900 min-h-screen text-white pb-20 relative">
       
       {/* ================= SECTION 1: HERO BANNER SLIDER ================= */}
       <div className="relative w-full h-[500px] md:h-[600px] overflow-hidden group">
@@ -149,7 +162,12 @@ export default function Home() {
                               >
                                  <Ticket size={20}/> Đặt Vé
                               </Link>
-                              <button className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-medium flex items-center gap-2 backdrop-blur-sm transition border border-white/30">
+                              
+                              {/* 🔥 NÚT TRAILER ĐÃ ĐƯỢC GẮN SỰ KIỆN */}
+                              <button 
+                                onClick={() => openTrailer(banner.trailerUrl)}
+                                className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-medium flex items-center gap-2 backdrop-blur-sm transition border border-white/30"
+                              >
                                  <PlayCircle size={20}/> Trailer
                               </button>
                            </div>
@@ -189,8 +207,7 @@ export default function Home() {
 
       {/* ================= SECTION 2: DANH SÁCH PHIM ================= */}
       <div className="container mx-auto px-4 py-16">
-        
-        {/* --- THANH TÌM KIẾM --- */}
+        {/* ... (Giữ nguyên phần thanh tìm kiếm) ... */}
         <div className="max-w-xl mx-auto mb-10 relative">
             <div className="relative group">
                 <input 
@@ -202,17 +219,14 @@ export default function Home() {
                 />
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-yellow-500 transition" size={20} />
                 {searchTerm && (
-                    <button 
-                        onClick={() => setSearchTerm("")}
-                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition"
-                    >
+                    <button onClick={() => setSearchTerm("")} className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition">
                         <X size={16} />
                     </button>
                 )}
             </div>
         </div>
 
-        {/* Tab Buttons */}
+        {/* ... (Giữ nguyên phần Tab Buttons) ... */}
         <div className="flex items-center justify-center gap-8 mb-12">
           <button 
             onClick={() => { setActiveTab("now"); setSearchTerm(""); }}
@@ -234,7 +248,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Movie Grid (ĐÃ GIỚI HẠN 8 PHIM) */}
+        {/* Movie Grid */}
         {displayedMovies.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
               {displayedMovies.map((movie) => (
@@ -246,8 +260,11 @@ export default function Home() {
                       className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
                     />
                     <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition duration-300 flex flex-col items-center justify-center gap-4 p-4">
-                      <Link to={`/movie/${movie._id}`} className="bg-yellow-500 text-black font-bold px-6 py-2 rounded-full hover:bg-yellow-400 w-full text-center shadow-lg">Mua Vé</Link>
-                      <Link to={`/movie/${movie._id}`} className="border border-white text-white font-medium px-6 py-2 rounded-full hover:bg-white/10 w-full text-center">Chi Tiết</Link>
+                      {/* Nút Trailer trong Grid */}
+                      <button onClick={() => openTrailer(movie.trailerUrl)} className="bg-red-600 text-white font-bold px-6 py-2 rounded-full hover:bg-red-500 w-full text-center shadow-lg flex items-center justify-center gap-2">
+                          <PlayCircle size={16}/> Trailer
+                      </button>
+                      <Link to={`/movie/${movie._id}`} className="bg-yellow-500 text-black font-bold px-6 py-2 rounded-full hover:bg-yellow-400 w-full text-center shadow-lg">Chi Tiết</Link>
                     </div>
                     <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-xs font-bold border border-yellow-500/50 text-yellow-500">
                       {movie.ageRating}
@@ -271,7 +288,6 @@ export default function Home() {
             </div>
         )}
 
-        {/* Nút Xem Tất Cả */}
         <div className="text-center mt-12">
            <Link to="/movies" className="inline-flex items-center gap-2 text-yellow-500 hover:text-yellow-400 font-semibold border border-yellow-500 px-6 py-2 rounded hover:bg-yellow-500/10 transition">
               Xem tất cả phim <ArrowRight size={18} />
@@ -308,6 +324,30 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* 🔥🔥🔥 MODAL TRAILER POPUP 🔥🔥🔥 */}
+      {selectedTrailer && (
+        <div 
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 animate-fade-in"
+            onClick={() => setSelectedTrailer(null)} // Bấm ra ngoài thì đóng
+        >
+            <div className="relative w-full max-w-4xl aspect-video bg-black rounded-lg shadow-2xl overflow-hidden">
+                <button 
+                    onClick={() => setSelectedTrailer(null)}
+                    className="absolute top-4 right-4 text-white bg-black/50 hover:bg-red-600 rounded-full p-2 transition z-10"
+                >
+                    <X size={24} />
+                </button>
+                <iframe 
+                    src={selectedTrailer} 
+                    title="Movie Trailer"
+                    className="w-full h-full"
+                    allow="autoplay; encrypted-media"
+                    allowFullScreen
+                ></iframe>
+            </div>
+        </div>
+      )}
 
     </div>
   );

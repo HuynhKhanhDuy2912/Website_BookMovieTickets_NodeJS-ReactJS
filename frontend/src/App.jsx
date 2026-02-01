@@ -23,6 +23,7 @@ import BookingSuccessPage from "./pages/client/BookingSuccessPage";
 import ProfilePage from "./pages/client/ProfilePage";
 import CinemaDetailPage from "./pages/client/CinemaDetailPage";
 import ContactPage from "./pages/client/ContactPage";
+import MyTicketsPage from "./pages/client/MyTicketsPage";
 // Admin Pages
 import Articles from "./pages/admin/articles";
 import Cinema from "./pages/admin/cinema";
@@ -78,6 +79,9 @@ function App() {
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/myticketspage" element={<MyTicketsPage />} />
+
+          
         </Route>
 
 

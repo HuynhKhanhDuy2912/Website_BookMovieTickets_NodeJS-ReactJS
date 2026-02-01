@@ -44,6 +44,12 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Mật khẩu không đúng" });
 
+    if (user.isBlocked) {
+        return res.status(403).json({ // 403 Forbidden
+            message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin." 
+        });
+    }
+
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     res.json({

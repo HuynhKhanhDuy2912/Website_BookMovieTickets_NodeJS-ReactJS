@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
     phone: { type: String },
     avatar: {type:String},
     role: { type: String, enum: ["user", "staff", "admin"], default: "user" },
+    isBlocked: { type: Boolean, default: false }
   },
   { timestamps: true }
 );
